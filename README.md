@@ -460,3 +460,18 @@ CUnet     : out = 2×in − 72
 ## 关于"无损"
 
 严格说超分不可能无损——小图里不存在的像素，大图必须凭空多出来。模型做的是"低损 + 符合视觉预期"：它按训练时学到的经验补出边缘和纹理。**照片、文字、细密网格这类高频内容，模型没有可靠先验，会编出不存在的细节**。别拿它去还原监控截图里的车牌和文件里的字。
+
+## 许可证与致谢
+
+**这个仓库的代码是 [MIT](LICENSE)。**
+
+用到的开源权重和字体各有各的许可，跟着各自的来源走：
+
+| 来源 | 内容 |
+|---|---|
+| [deepghs/waifu2x_onnx](https://huggingface.co/deepghs/waifu2x_onnx) | waifu2x 的 CUnet / Swin-UNet ONNX 权重 |
+| [yuvraj108c/ComfyUI-Upscaler-Onnx](https://huggingface.co/yuvraj108c/ComfyUI-Upscaler-Onnx) | RealESRGAN_x4plus、4x-AnimeSharp |
+| [nagadomi/waifu2x](https://github.com/nagadomi/waifu2x) · [xinntao/Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | 上面这些权重的原始算法与训练 |
+| Archivo · IBM Plex | 网页字体，SIL Open Font License 1.1 |
+
+权重只放在上游的仓库里，这里只提供清单和下载脚本 —— 想再分发权重请回到上游看它们的条款。
