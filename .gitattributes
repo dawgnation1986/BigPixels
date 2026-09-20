@@ -1,0 +1,30 @@
+# ---------------------------------------------------------------------------
+# 换行符按文件类型钉死，不交给 core.autocrlf 去猜。
+#
+# 这个项目里有一对文件的换行符是**硬要求**，猜错就直接坏掉：
+#
+#   start_web.bat  必须 CRLF。cmd.exe 是按字节偏移一行行读 .bat 的，
+#                  只有 LF 的话会把行读错位 —— 实测报出 'd'、'\pip'
+#                  这种碎片，然后后面一半命令干脆没执行。
+#   start_web.sh   必须 LF。CRLF 的 shell 脚本在 Linux/macOS 上会直接
+#                  bad interpreter: /usr/bin/env bash^M。
+#
+# .bat 用 -text（原样按 CRLF 存进仓库），而不是惯例的 `text eol=crlf`：
+# 后者仓库里存的是 LF、只有检出时才转回 CRLF，于是**从网页上直接下这一个文件**
+# 拿到的会是 LF 版本 —— 双击就坏。原样存则 clone / Release 包 / 单文件下载
+# 三条路拿到的都是 CRLF，没有例外。
+# ---------------------------------------------------------------------------
+
+* text=auto
+
+*.bat  -text
+*.cmd  -text
+*.sh   text eol=lf
+
+# 二进制，别做任何转换
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.woff2 binary
+*.onnx  binary

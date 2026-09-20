@@ -1,0 +1,561 @@
+/* ============================================================================
+   BigPixels 放大台 · 全部样式
+
+   页面骨架在 ../index.html，行为在 ../js/app.js，这里只有样式。
+   服务端按 /css/ 前缀把本文件发出去（见 server.py 的 STATIC_OK）。
+   字体在 /fonts/ 自托管，运行时不碰任何 CDN。
+
+   两个主题：:root 是浅色，以下两处是深色（系统偏好 / 手动 data-theme）。
+   光台（放图那块）不跟主题走 —— 照片要在中性深底上才评得准。
+   ============================================================================ */
+/* ============================================================
+   字体：全部自托管在 /fonts/，离线可用，运行时不碰任何 CDN。
+   中文交给系统字体（栈里已排好），拉丁字面只需覆盖数字、
+   单位、模型名。
+   ============================================================ */
+@font-face{font-family:'Archivo';font-style:normal;font-weight:600;font-display:swap;src:url('/fonts/archivo-600.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:700;font-display:swap;src:url('/fonts/archivo-700.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/ibm-plex-sans-400.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:500;font-display:swap;src:url('/fonts/ibm-plex-sans-500.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:600;font-display:swap;src:url('/fonts/ibm-plex-sans-600.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/ibm-plex-mono-400.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url('/fonts/ibm-plex-mono-500.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:600;font-display:swap;src:url('/fonts/ibm-plex-mono-600.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+/* 拉丁子集里没有 → (U+2192)，单独抓一份，免得箭头掉进系统字体、跟等宽数字对不齐 */
+@font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:400 600;font-display:swap;src:url('/fonts/plex-mono-symbols.woff2') format('woff2');unicode-range:U+2192,U+2248;}
+
+/* ============================================================
+   设计令牌
+   光台（放图那块）永远是深色中性底，不随主题走 —— 照片要在中性
+   深底上才评得准，这是暗房的规矩。它有独立一套令牌，两套主题下
+   都不改；控制台那套才跟着主题换。
+   ============================================================ */
+:root{
+  color-scheme:light;
+
+  --stage:#0B0D0C;
+  --stage-2:#151918;
+  --stage-line:rgba(255,255,255,.14);
+  --stage-ink:#EEF3F1;
+  --stage-mute:#8D9A97;
+
+  --bg:#E8EBEA;
+  --panel:#F5F7F6;
+  --raise:#FFFFFF;
+  --sunken:#DCE1E0;
+  --line:#D1D6D4;
+  --line-soft:#E2E7E5;
+  --ink:#0D1413;
+  --ink-2:#394643;
+  --mute:#6C7976;
+
+  --accent:#0D6B58;
+  --accent-ink:#FFFFFF;
+  --accent-soft:rgba(13,107,88,.09);
+  --accent-line:rgba(13,107,88,.32);
+
+  --warn:#8A5A08;
+  --warn-soft:rgba(138,90,8,.10);
+  --bad:#A63328;
+  --bad-soft:rgba(166,51,40,.09);
+
+  --r:3px;
+  --r-lg:5px;
+  --shadow:0 1px 2px rgba(13,20,19,.05),0 14px 30px -20px rgba(13,20,19,.30);
+
+  --font-display:'Archivo',ui-sans-serif,system-ui,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+  --font-body:'IBM Plex Sans',ui-sans-serif,system-ui,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,"Cascadia Mono",Consolas,monospace;
+
+  --t-xs:11px;
+  --t-sm:12.5px;
+  --t-base:13.5px;
+  --t-md:15px;
+  --t-lg:17px;
+  --t-xl:21px;
+  --t-fig:32px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#080B0A; --panel:#101615; --raise:#171F1D; --sunken:#0C1211;
+    --line:#26302E; --line-soft:#1B2422;
+    --ink:#E9EFED; --ink-2:#ACB8B5; --mute:#7B8885;
+    --accent:#4FC3A1; --accent-ink:#04201A;
+    --accent-soft:rgba(79,195,161,.13); --accent-line:rgba(79,195,161,.38);
+    --warn:#DFA349; --warn-soft:rgba(223,163,73,.13);
+    --bad:#E8766A; --bad-soft:rgba(232,118,106,.13);
+    --shadow:0 1px 2px rgba(0,0,0,.45),0 18px 36px -22px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#080B0A; --panel:#101615; --raise:#171F1D; --sunken:#0C1211;
+  --line:#26302E; --line-soft:#1B2422;
+  --ink:#E9EFED; --ink-2:#ACB8B5; --mute:#7B8885;
+  --accent:#4FC3A1; --accent-ink:#04201A;
+  --accent-soft:rgba(79,195,161,.13); --accent-line:rgba(79,195,161,.38);
+  --warn:#DFA349; --warn-soft:rgba(223,163,73,.13);
+  --bad:#E8766A; --bad-soft:rgba(232,118,106,.13);
+  --shadow:0 1px 2px rgba(0,0,0,.45),0 18px 36px -22px rgba(0,0,0,.8);
+}
+
+/* ============================================================ 基础 */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font:var(--t-base)/1.62 var(--font-body);
+  -webkit-font-smoothing:antialiased;
+  min-height:100dvh;
+}
+h1,h2,h3,p,dl,dd,dt,figure,figcaption{margin:0}
+button,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skip{position:absolute;left:-9999px}
+.skip:focus{left:12px;top:12px;z-index:99;background:var(--raise);padding:8px 12px;border:1px solid var(--line);border-radius:var(--r)}
+[hidden]{display:none !important}
+
+.shell{
+  max-width:1360px;
+  margin-inline:auto;
+  padding-block:22px 72px;
+  padding-inline:clamp(16px,3vw,36px);
+}
+
+/* ============================================================ 顶栏 */
+.topbar{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding-block:0 14px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px}
+.brand svg{width:22px;height:22px;color:var(--accent);flex:none}
+.brand h1{font:700 var(--t-xl)/1 var(--font-display);letter-spacing:-.02em;display:flex;align-items:baseline;gap:9px}
+.brand h1 span{font:600 var(--t-xs)/1 var(--font-display);letter-spacing:.2em;color:var(--mute);text-transform:uppercase}
+.engine{display:flex;flex-wrap:wrap;gap:6px;margin-inline-start:auto;align-items:center;font:400 var(--t-xs)/1 var(--font-mono);color:var(--mute)}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:var(--r);padding:5px 8px;background:var(--panel);white-space:nowrap}
+.chip b{font-weight:500;color:var(--ink-2)}
+.dot{width:6px;height:6px;flex:none;background:var(--accent);border-radius:50%}
+.dot.warn{background:var(--warn)}
+.themer{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 10px;cursor:pointer;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
+.themer:hover{border-color:var(--accent-line)}
+.themer svg{width:14px;height:14px;color:var(--mute)}
+
+/* ============================================================ 版面 */
+.bench{display:grid;grid-template-columns:392px minmax(0,1fr);gap:clamp(20px,3vw,40px);align-items:start;margin-block:26px 0}
+@media (max-width:1080px){.bench{grid-template-columns:minmax(0,1fr)}}
+.console{display:flex;flex-direction:column;gap:26px}
+.grp{display:flex;flex-direction:column;gap:12px}
+.eyebrow{display:flex;align-items:center;gap:12px}
+.eyebrow span{font:600 var(--t-xs)/1 var(--font-display);letter-spacing:.18em;text-transform:uppercase;color:var(--mute)}
+.eyebrow i{flex:1;height:1px;background:var(--line)}
+.eyebrow em{font:400 var(--t-xs)/1 var(--font-mono);color:var(--mute);font-style:normal}
+.hint{font-size:var(--t-sm);color:var(--mute);line-height:1.55}
+.hint b{color:var(--ink-2);font-weight:500}
+
+/* ============================================================ 输入 */
+.drop{
+  position:relative;display:flex;flex-direction:column;align-items:center;gap:5px;
+  padding:22px 18px;cursor:pointer;text-align:center;
+  border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel);
+  transition:border-color .15s,background .15s;
+}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop strong{font:600 var(--t-md)/1.3 var(--font-body)}
+.drop small{font:400 var(--t-sm)/1.5 var(--font-body);color:var(--mute)}
+.drop::before,.drop::after{content:"";position:absolute;width:11px;height:11px;pointer-events:none;border-color:var(--line)}
+.drop::before{left:7px;top:7px;border-left:1px solid;border-top:1px solid}
+.drop::after{right:7px;bottom:7px;border-right:1px solid;border-bottom:1px solid}
+
+.loaded{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel)}
+.loaded img{width:64px;height:64px;object-fit:cover;image-rendering:pixelated;border:1px solid var(--line);border-radius:2px;background:var(--stage)}
+.loaded .meta{min-width:0;display:flex;flex-direction:column;gap:3px}
+.loaded .meta strong{font:500 var(--t-sm)/1.4 var(--font-body);overflow-wrap:anywhere}
+.loaded .meta code{font:400 var(--t-xs)/1.4 var(--font-mono);color:var(--mute)}
+.btns{display:flex;flex-direction:column;gap:6px}
+.mini{min-height:32px;padding:0 9px;cursor:pointer;border:1px solid var(--line);border-radius:var(--r);background:var(--raise);font-size:var(--t-sm);color:var(--ink-2)}
+.mini:hover{border-color:var(--accent-line);color:var(--ink)}
+.samples{display:flex;flex-direction:column;gap:8px}
+.samples .row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.sample{
+  display:flex;flex-direction:column;gap:6px;padding:7px;cursor:pointer;text-align:start;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--raise);
+  transition:border-color .15s;
+}
+.sample:hover{border-color:var(--accent)}
+.sample img{width:100%;aspect-ratio:3/2;object-fit:cover;display:block;border-radius:2px;background:var(--stage)}
+.sample b{font:500 var(--t-xs)/1.3 var(--font-body)}
+.sample code{font:400 10.5px/1.2 var(--font-mono);color:var(--mute)}
+
+/* ============================================================ 选项（原生 radio，键盘可用） */
+.pick input[type=radio], .seg input[type=radio], .opt input[type=radio]{
+  position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;
+}
+
+.picks{display:flex;flex-direction:column;border-top:1px solid var(--line-soft)}
+.pick{
+  position:relative;display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:11px;align-items:start;
+  padding:11px 9px;cursor:pointer;border-bottom:1px solid var(--line-soft);
+  transition:background .13s;
+}
+.pick:hover{background:var(--panel)}
+.pick.on{background:var(--accent-soft)}
+.pick:focus-within{outline:2px solid var(--accent);outline-offset:-2px}
+.pick.off{cursor:not-allowed;opacity:.55}
+.pick .box{width:14px;height:14px;margin-top:2px;border:1px solid var(--line);border-radius:2px;transition:background .13s,border-color .13s}
+.pick.on .box{border-color:var(--accent);background:var(--accent)}
+.pick .txt{display:flex;flex-direction:column;gap:3px;min-width:0}
+.pick .txt b{font:500 var(--t-base)/1.35 var(--font-body)}
+.pick .txt small{font:400 var(--t-sm)/1.45 var(--font-body);color:var(--mute)}
+.pick em{font:400 var(--t-xs)/1.6 var(--font-mono);color:var(--mute);white-space:nowrap;font-style:normal}
+.pick.on em{color:var(--accent)}
+.pick.off em{color:var(--warn)}
+
+/* 输出尺寸当场算给你看 —— 选了 4× 到底多大，不用猜 */
+.readout{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 9px;font:400 var(--t-sm)/1.5 var(--font-mono);color:var(--mute)}
+.readout b{font:500 var(--t-md)/1 var(--font-mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.readout .arrow{color:var(--accent)}
+
+/* 折叠区：次要设置和计量表默认收起来，主界面只留四个选择 */
+.adv{border-top:1px solid var(--line);padding-block-start:14px}
+.adv > summary{cursor:pointer;color:var(--ink-2);font-size:var(--t-sm);list-style:none;display:flex;align-items:center;gap:9px;width:fit-content}
+.adv > summary::-webkit-details-marker{display:none}
+.adv > summary::before{
+  content:"";width:6px;height:6px;flex:none;
+  border-right:1.5px solid var(--mute);border-bottom:1.5px solid var(--mute);
+  transform:rotate(-45deg);transition:transform .15s;
+}
+.adv[open] > summary::before{transform:rotate(45deg)}
+.adv > summary:hover{color:var(--ink)}
+.adv .body{display:flex;flex-direction:column;gap:14px;padding-block-start:14px}
+
+/* ============================================================ 降噪 / 下拉 */
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg label{
+  position:relative;flex:1 1 52px;display:inline-flex;align-items:center;justify-content:center;
+  min-height:36px;padding:0 8px;cursor:pointer;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--raise);
+  font-size:var(--t-sm);color:var(--ink-2);
+  transition:border-color .13s,background .13s,color .13s;
+}
+.seg label:hover{border-color:var(--accent-line)}
+.seg label.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:500}
+.seg label.off{cursor:not-allowed;opacity:.45}
+.seg label:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.fieldrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fieldrow label,.fieldrow .label{font-size:var(--t-sm);color:var(--ink-2);min-width:56px}
+.fieldrow .seg{flex:1 1 auto}
+select{
+  min-height:36px;padding:0 30px 0 10px;cursor:pointer;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--raise);
+  font:400 var(--t-sm)/1 var(--font-mono);
+  appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--mute) 50%),linear-gradient(135deg,var(--mute) 50%,transparent 50%);
+  background-position:calc(100% - 15px) calc(50% - 2px),calc(100% - 10px) calc(50% - 2px);
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat;
+}
+
+/* ============================================================ 主按钮 / 进度 */
+.go{
+  width:100%;min-height:46px;cursor:pointer;
+  border:1px solid var(--accent);border-radius:var(--r);
+  background:var(--accent);color:var(--accent-ink);
+  font:500 var(--t-md)/1 var(--font-body);
+  transition:filter .13s;
+}
+.go:hover:not([disabled]){filter:brightness(1.08)}
+.go[disabled]{cursor:not-allowed;background:var(--sunken);border-color:var(--line);color:var(--mute)}
+.prog{display:flex;flex-direction:column;gap:9px}
+.rule{position:relative;height:9px;border:1px solid var(--line);border-radius:2px;background:var(--sunken);overflow:hidden}
+.rule .fill{position:absolute;inset:0 auto 0 0;width:0;background:var(--accent);transition:width .3s linear}
+.rule .ticks i{position:absolute;top:0;bottom:0;width:1px;background:var(--panel)}
+.pline{display:flex;justify-content:space-between;gap:12px;font:400 var(--t-sm)/1.4 var(--font-mono);color:var(--mute)}
+.pline b{font-weight:500;color:var(--ink)}
+.alert{display:flex;flex-direction:column;gap:5px;padding:10px 12px;border:1px solid var(--bad);border-block-start-width:1px;border-inline-start-width:3px;border-radius:var(--r);background:var(--bad-soft);font-size:var(--t-sm)}
+.alert strong{font-weight:600}
+.alert code{font-family:var(--font-mono);font-size:var(--t-xs);overflow-wrap:anywhere;color:var(--ink-2)}
+.notice{padding:9px 11px;border:1px solid var(--warn);border-inline-start-width:3px;border-radius:var(--r);background:var(--warn-soft);font-size:var(--t-sm);color:var(--ink-2)}
+.notice b{font-weight:600}
+/* 只是告知「存哪了」而不是提醒风险时，别用警告色 —— 颜色得跟语气对上 */
+.notice.ok{border-color:var(--accent-line);background:var(--accent-soft)}
+.notice code{font-family:var(--font-mono);font-size:var(--t-xs);color:var(--ink-2)}
+
+/* ============================================================ 光台 */
+.lightbox{display:flex;flex-direction:column;gap:22px;min-width:0}
+.bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.bar .eyebrow{flex:1;min-width:170px}
+.legend{display:flex;gap:12px;font:400 var(--t-xs)/1 var(--font-mono);color:var(--mute)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:9px;height:9px;border-radius:1px;display:block}
+
+.stagebox{
+  position:relative;
+  background:var(--stage);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:clamp(12px,2vw,22px);
+  display:flex;justify-content:center;align-items:center;min-height:280px;
+}
+/* 全屏对比：左边光台铺满，右边固定一栏实时细节三格 —— 鼠标框住哪一块，右边就放哪一块。
+   三格竖排，格子大小被视口高度卡死，所以这一栏的每一分余量都得抠：
+   标题和倍率挤一行、取景滑块再占一行、三格的说明做成压在画面上的一角，
+   省下来的全给格子。
+   --fspane 就是「(视口高 − 栏内固定开销) ÷ 3」，一屏正好放下三格 ——
+   这个开销要按「标题、倍率、滑块各占一行」算：倍率档位有五个，窗口一窄就会折行，
+   折了行还按一行算，三格就顶出去、栏里就冒滚动条（这坑真踩过一次）；
+   后来又在标题下面加了一条取景滑块，开销就得再加一行，不然同样顶出去。
+   栏本身 overflow:hidden；窄屏时倍率键自己折行，宁可多占一行也别被切掉。 */
+.stagebox:fullscreen{
+  --fspane:clamp(110px,calc((100vh - 232px) / 3),440px);
+  --fsbar:calc(var(--fspane) + 30px);
+  border:0;border-radius:0;padding:0;
+  width:100vw;height:100vh;min-height:0;
+  display:grid;grid-template-columns:minmax(0,1fr) var(--fsbar);
+  align-items:stretch;justify-content:stretch;
+}
+.stagebox:fullscreen .viewport{
+  width:min(calc(100vw - var(--fsbar)),100vh * var(--arn,1.5));
+  height:auto;max-width:none;margin:auto;
+}
+.stagebox:fullscreen .loupe{
+  margin:0;border-top:0;border-inline-start:1px solid var(--stage-line);
+  background:var(--stage-2);padding:15px;gap:11px;
+  min-height:0;overflow:hidden;
+}
+.stagebox:fullscreen .loupe .bar{flex-direction:row;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+/* 倍率键在窄栏里自己折行，绝不许撑出栏外 —— 撑出去就是一条横向滚动条 */
+.stagebox:fullscreen .loupe .seg{flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;min-width:0}
+.stagebox:fullscreen .loupe .bar .eyebrow i{display:none}
+.stagebox:fullscreen .panes{grid-template-columns:minmax(0,1fr);gap:11px}
+.stagebox:fullscreen .pane{position:relative}
+.stagebox:fullscreen .pane .win{width:100%}
+/* 说明压到画面角上，不再各占一行 */
+.stagebox:fullscreen .pane .cap{
+  position:absolute;left:4px;right:4px;bottom:4px;z-index:2;
+  padding:2px 5px;border-radius:2px;background:rgba(11,13,12,.74);
+}
+.stagebox:fullscreen .pane .cap b{color:var(--stage-ink)}
+.stagebox:fullscreen .pane.ai .cap b{color:var(--accent)}
+.stagebox:fullscreen .pane .cap code{color:var(--stage-mute)}
+.stagebox:fullscreen #bicNote,.stagebox:fullscreen #zoomNote{display:none}
+.stagebox:fullscreen .fsHint{left:calc((100% - var(--fsbar)) / 2)}
+.fsHint{
+  display:none;position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:6;
+  padding:5px 11px;border-radius:var(--r);background:rgba(11,13,12,.7);
+  color:var(--stage-mute);font:400 var(--t-xs)/1.4 var(--font-mono);
+  pointer-events:none;white-space:nowrap;
+}
+.stagebox:fullscreen .fsHint{display:block}
+/* 一屏之内同时装下光台和放大镜 —— 用户的原话是「鱼和熊掌不可兼得了」：
+   鼠标在光台上框住哪一块是「看哪儿」，放大镜是「看清什么」，两个必须同屏。
+   改之前在 1920×1080 的窗口里量过：光台 596 + 间隔 145 + 放大镜 437 = 1178 px，
+   可用的视口只有 982 px，差了 196 —— 于是看得到框框就看不到放大镜，滚下去
+   看放大镜又丢了框框。这 196 px 全从固定开销里抠，不靠把画面砍烂：
+     · 光台 596 → 439：放大镜一出来，画面长边从 56dvh 收到 40dvh        -157
+     · 「结果存哪了」那条提醒搬去左边控制台，不再横在两块中间（见 index.html） -63
+     · 三格边长 277 → 25dvh，矮窗口里跟着缩（三格本来就被栏宽卡在 277）    -32
+     · 三格之间的空当 13 → 11                                           -6
+     · 三格下面那行说明压成一行（39 → 18，文案同步收短，见 app.js）        -21
+   合计 -279，落到 900 px —— 982 的视口里余 82。
+   这两个 dvh 系数不是拍的：光台 + 三格 ≤ 视口 − 262（间隔、标题行、取景行、
+   图注、说明加起来是死的），按 0.40 + 0.25 留出的余量正好让 800 px 高的视口
+   （1600×900 的笔记本）也同得了屏；再矮（横屏再压一层书签栏那种）本来就得滚，
+   不硬凑，CSS 也不为那些尺寸做特判 —— 见 shots.py 里 900 那条线。 */
+.lightbox{--stageCap:min(56dvh,620px)}
+.lightbox:has(#loupe:not([hidden])){--stageCap:min(40dvh,620px)}
+
+.viewport{
+  position:relative;width:100%;
+  aspect-ratio:var(--ar,3/2);
+  max-width:calc(var(--stageCap,min(56dvh,620px)) * var(--arn,1.5));
+  background:var(--stage-2);border-radius:2px;overflow:hidden;
+  touch-action:pan-y;
+  /* 放大镜出来/收走时画面是「缩一点」而不是「跳一下」——
+     跳一下像坏了，缩一下像是在给下面那块腾地方。 */
+  transition:max-width .22s cubic-bezier(.2,.7,.3,1);
+}
+/* 两层合成：底层是结果，上层是原图，靠 clip-path 露出一条缝。
+   两张都换成了缩略预览，所以这里拖动只是合成器换个裁剪矩形，跟解码无关。 */
+.viewport img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.layer-before{position:absolute;inset:0;will-change:clip-path;clip-path:inset(0 calc(100% - var(--split,50%)) 0 0)}
+.corner{
+  position:absolute;top:9px;z-index:3;padding:3px 7px;border-radius:2px;
+  background:rgba(11,13,12,.76);color:var(--stage-ink);
+  font:400 var(--t-xs)/1.5 var(--font-mono);
+}
+.corner.l{left:9px}
+.corner.r{right:9px}
+.divider{position:absolute;top:0;bottom:0;left:var(--split,50%);z-index:2;width:1px;background:var(--stage-ink);opacity:.9;pointer-events:none}
+.grip{
+  position:absolute;top:50%;left:var(--split,50%);z-index:4;
+  width:44px;height:44px;margin:0;padding:0;cursor:ew-resize;transform:translate(-50%,-50%);
+  border:0;background:transparent;display:grid;place-items:center;
+}
+.grip i{width:28px;height:28px;border-radius:50%;background:var(--stage-ink);box-shadow:0 2px 10px rgba(0,0,0,.55);display:grid;place-items:center;grid-auto-flow:column;gap:3px}
+.grip i b{width:1.5px;height:9px;background:var(--stage);display:block}
+.cross{position:absolute;z-index:3;pointer-events:none;border:1px solid var(--accent);box-shadow:0 0 0 1px rgba(0,0,0,.5);transition:left .08s linear,top .08s linear}
+.reg{position:absolute;width:14px;height:14px;border:1px solid var(--stage-line);pointer-events:none}
+.empty-state{display:flex;flex-direction:column;align-items:center;gap:13px;width:100%;padding:34px 10px;text-align:center;color:var(--stage-mute)}
+.empty-state .fig{font:400 var(--t-fig)/1 var(--font-mono);color:var(--stage-ink);opacity:.45;font-variant-numeric:tabular-nums}
+.empty-state p{font-size:var(--t-sm);max-width:46ch;line-height:1.65}
+.empty-state p b{color:var(--stage-ink);font-weight:500}
+.overlay{
+  position:absolute;inset:0;z-index:5;padding:20px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  background:rgba(11,13,12,.64);color:var(--stage-ink);text-align:center;
+}
+.overlay .pct{font:600 30px/1 var(--font-mono);font-variant-numeric:tabular-nums}
+.overlay .lbl{font:400 var(--t-sm)/1.5 var(--font-mono);color:var(--stage-mute);max-width:34ch}
+.scan{width:min(240px,60%);height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:scan 1.5s ease-in-out infinite}
+@keyframes scan{0%,100%{opacity:.18;transform:translateX(-16%)}50%{opacity:1;transform:translateX(16%)}}
+@keyframes develop{from{opacity:.25;filter:blur(9px)}to{opacity:1;filter:blur(0)}}
+.layer-after.develop{animation:develop .42s cubic-bezier(.2,.7,.3,1) both}
+@media (prefers-reduced-motion:reduce){
+  .scan{animation:none;opacity:.75}
+  .layer-after.develop{animation:none}
+  .cross{transition:none}
+  .rule .fill{transition:none}
+  .viewport{transition:none}
+}
+
+.toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.toolbar .grow{flex:1;min-width:180px}
+.dl{
+  display:inline-flex;align-items:center;gap:8px;min-height:38px;padding:0 13px;
+  border:1px solid var(--line);border-radius:var(--r);background:var(--raise);
+  font-size:var(--t-sm);color:var(--ink-2);text-decoration:none;
+}
+.dl:hover{border-color:var(--accent-line);color:var(--ink)}
+.dl[aria-disabled="true"]{opacity:.45;pointer-events:none}
+
+/* ============================================================ 放大镜
+   三格锁在同一块画面、同一个屏幕尺寸上：屏幕一格 = 输出一像素 × 倍率。
+   排在右栏最前面，**在「这次改了什么」折叠栏之前**（用户要求「放大镜靠前」）——
+   那块折叠栏一展开就是几十行计量表，放大镜跟在它后面容易被推出屏幕。
+   看多大一块由倍率决定：1:1 是输出一像素对屏幕一像素（看模型的原始像素），
+   比 1:1 更远的档位就是「一格塞进一大块画面」，看的是整块结构、不是单个像素。
+   图不是整幅塞进来的，是按需跟服务端要一块真像素；倍率更远时让服务端先缩到
+   屏幕尺寸再发，省掉传输和解码。位置只改 transform，不动布局也不重新解码。
+   全屏时这套 DOM 会被挪进光台右侧那一栏复用，不另起一套，也就不会重复请求。 */
+.loupe{
+  /* 一格的正方形边长。栏宽定死时它本该是 (栏宽 − 两个空当) ÷ 3，
+     但这个值在矮窗口里太大了 —— 三格竖着只占一行，却按栏宽把整块撑高，
+     所以跟光台抢起高度来它毫不让步。改成也受视口高约束：
+     高窗口里就是栏宽那个值（原样），矮窗口里先缩格子、保住同屏。
+     见上面 .lightbox 那段算账。 */
+  --pane:clamp(150px,25dvh,277px);
+  display:flex;flex-direction:column;gap:11px;
+  margin-block-start:clamp(20px,3vw,34px);border-top:1px solid var(--line);
+  padding-block:20px 0;
+}
+/* 已经在右栏里了，间距由 .lightbox 的 gap 出，别再叠一条分割线 */
+.lightbox #loupeSlot .loupe{margin-block-start:0;border-top:0;padding-block-start:0}
+/* 倍率档位是五个，别让它换行、也别把标题挤没了 */
+.loupe .seg{flex:0 0 auto;flex-wrap:nowrap}
+.loupe .seg label{flex:0 0 auto;padding:0 9px}
+.loupe .bar .eyebrow{min-width:0}
+/* 三格下面那行说明。原来 12.5 px 会折成两行、白占 39 px，而它跟光台、放大镜
+   抢的是同一屏的高度 —— 字号降到 11 px（文案在 app.js 里同步收短），一行放得下。 */
+#zoomNote{font-size:var(--t-xs);line-height:1.6}
+
+/* 连续的取景滑块。和上面那排档位共用一条轴：往左一格装下更多画面，往右看得更细。
+   一行里的顺序是「取景 1:4 多 [滑块] 细」—— 读数贴着标签，两头的字夹着滑块。
+   轨道和滑块都自己画 —— UA 默认那根在深色光台里基本看不见。
+   窄栏（全屏右栏最窄只有 180px）靠 flex-wrap 把滑块挤到下一行、自己占满一行，
+   绝不撑出栏外：撑出去就是一条横向滚动条，而这一栏 overflow:hidden，等于被切掉。 */
+.spanrow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.spanrow>label{flex:0 0 auto;font:500 var(--t-xs)/1 var(--font-body);color:var(--ink-2)}
+.spanrow .spanEnd{flex:0 0 auto;font:400 var(--t-xs)/1 var(--font-mono);color:var(--mute)}
+/* 读数紧挨着「取景」放（DOM 里就在 label 后面），不甩到行的另一头 ——
+   窄栏里 flex-wrap 会把它单独甩下一行，读数跟标签就分了家。 */
+.spanrow output{
+  flex:0 0 auto;min-width:4.6ch;
+  font:400 var(--t-sm)/1 var(--font-mono);color:var(--ink-2);font-variant-numeric:tabular-nums;
+}
+#span{
+  flex:1 1 120px;min-width:84px;height:22px;margin:0;
+  -webkit-appearance:none;appearance:none;background:transparent;cursor:ew-resize;
+}
+#span::-webkit-slider-runnable-track{
+  height:3px;border-radius:2px;background:var(--sunken);border:1px solid var(--line-soft);
+}
+#span::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:13px;height:13px;border-radius:50%;
+  background:var(--accent);border:2px solid var(--raise);margin-top:-6px;
+  box-shadow:0 1px 3px rgba(13,20,19,.28);
+}
+#span::-moz-range-track{
+  height:3px;border-radius:2px;background:var(--sunken);border:1px solid var(--line-soft);
+}
+#span::-moz-range-thumb{
+  width:13px;height:13px;border-radius:50%;background:var(--accent);
+  border:2px solid var(--raise);box-shadow:0 1px 3px rgba(13,20,19,.28);
+}
+/* 全屏右栏是深底（--stage-2），滑块得换成光台那套颜色才看得见 */
+.stagebox:fullscreen .spanrow>label{color:var(--stage-ink)}
+.stagebox:fullscreen .spanrow output{color:var(--stage-mute)}
+.stagebox:fullscreen .spanrow .spanEnd{display:none}   /* 栏太窄，这两头省掉 */
+.stagebox:fullscreen #span::-webkit-slider-runnable-track{
+  background:rgba(255,255,255,.16);border-color:transparent;
+}
+.stagebox:fullscreen #span::-webkit-slider-thumb{border-color:var(--stage-2)}
+.stagebox:fullscreen #span::-moz-range-track{
+  background:rgba(255,255,255,.16);border-color:transparent;
+}
+.stagebox:fullscreen #span::-moz-range-thumb{border-color:var(--stage-2)}
+/* 三格横排。每格的边长由 --pane 定：高窗口里就是「(栏宽 − 两个空当) ÷ 3」那个原尺寸，
+   三格正好铺满整栏；矮窗口里 --pane 被视口高压低，格子变小、栏里就空出一截。
+   空出来的宽度摊到三个格子之间（space-between），不把它们缩成一小撮挤在中间：
+   三格仍然贴齐栏的左右两边，跟上面的标题行、取景行对齐 —— 中间空当宽一点像
+   三条并排的窗，比「一堆居中的小方块」稳。 */
+.panes{display:grid;grid-template-columns:repeat(3,minmax(0,var(--pane,277px)));
+  justify-content:space-between;column-gap:12px;
+  --dx:0px;--dy:0px;--tilew:0px}
+.pane{display:flex;flex-direction:column;gap:7px;min-width:0}
+.pane .win{
+  position:relative;overflow:hidden;width:100%;aspect-ratio:1;
+  border:1px solid var(--stage-line);border-radius:2px;background:var(--stage);
+}
+.pane .win img{
+  position:absolute;left:0;top:0;display:block;
+  width:var(--tilew);height:auto;
+  transform:translate3d(var(--dx),var(--dy),0);
+}
+.pane .win .none{
+  position:absolute;inset:0;display:grid;place-items:center;padding:8px;text-align:center;
+  font:400 var(--t-xs)/1.5 var(--font-mono);color:var(--stage-mute);
+}
+.pane.nn .win img{image-rendering:pixelated}
+.pane .cap{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.pane .cap b{font:500 var(--t-sm)/1.3 var(--font-body);color:var(--ink-2)}
+.pane .cap code{font:400 var(--t-xs)/1.3 var(--font-mono);color:var(--mute);white-space:nowrap}
+.pane.ai .cap b{color:var(--accent)}
+.pane .spin{
+  position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;
+  font:400 var(--t-xs)/1 var(--font-mono);color:var(--stage-mute);opacity:0;
+  transition:opacity .18s;
+}
+.pane .win.busy .spin{opacity:1}
+@keyframes blink{0%,100%{opacity:.25}50%{opacity:1}}
+.pane .win.busy .spin i{animation:blink 1.1s ease-in-out infinite;font-style:normal}
+
+/* ============================================================ 计量表 */
+.lgroup{padding-block:14px 0}
+.lgroup h3{font:600 var(--t-xs)/1 var(--font-display);letter-spacing:.18em;text-transform:uppercase;color:var(--mute);margin-block-end:9px}
+.lrow{display:grid;grid-template-columns:104px minmax(0,1fr);column-gap:14px;row-gap:5px;padding-block:9px;border-top:1px solid var(--line-soft)}
+.lrow dt{font-size:var(--t-sm);color:var(--mute);line-height:1.5}
+.lrow dd{margin:0;text-align:end;overflow-wrap:anywhere;font:500 var(--t-sm)/1.5 var(--font-mono);font-variant-numeric:tabular-nums}
+.lrow dd .u{font-weight:400;color:var(--mute)}
+.lrow p{grid-column:1/-1;font-size:var(--t-xs);line-height:1.55;color:var(--mute);max-width:82ch}
+.lrow.dim dd{font-weight:400;color:var(--mute)}
+
+/* ============================================================ 页脚 */
+.foot{
+  margin-block-start:46px;padding-block-start:18px;border-top:1px solid var(--line);
+  display:flex;flex-direction:column;gap:9px;font-size:var(--t-sm);color:var(--mute);
+}
+.foot code{font:400 var(--t-xs)/1.5 var(--font-mono);color:var(--ink-2);overflow-wrap:anywhere}
+.foot summary{cursor:pointer;color:var(--ink-2);width:fit-content}
+.foot details p{margin-block-start:8px;line-height:1.68;max-width:80ch}
+.foot details b{color:var(--ink-2)}
+
+@keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+.reveal{animation:rise .46s cubic-bezier(.2,.7,.3,1) both;animation-delay:var(--d,0s)}
+@media (prefers-reduced-motion:reduce){.reveal{animation:none}}

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BigPixels 放大台</title>
+<meta name="description" content="在你自己的机器上跑深度卷积网络放大图片：waifu2x 与 Real-ESRGAN 权重本地推理，附双三次基线与像素级放大镜对照。">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' fill='%230B0D0C'/%3E%3Crect x='3.5' y='3.5' width='13' height='13' fill='none' stroke='%234FC3A1' stroke-width='1.4'/%3E%3Crect x='7' y='7' width='6' height='6' fill='%234FC3A1'/%3E%3C/svg%3E">
+<!-- 样式和脚本各自成文件（css/ 与 js/），页面只留骨架 ——
+     改版式不用在两千行里翻 script。服务端按 /css/、/js/ 前缀发这两个目录。 -->
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<a class="skip" href="#console">跳到控制台</a>
+
+<div class="shell">
+
+  <header class="topbar reveal">
+    <div class="brand">
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <rect x="1.6" y="1.6" width="16.8" height="16.8" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <rect x="6.2" y="6.2" width="7.6" height="7.6" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+        <rect x="6.2" y="6.2" width="3.8" height="3.8" fill="currentColor"/>
+      </svg>
+      <h1>BigPixels<span>放大台</span></h1>
+    </div>
+    <div class="engine" id="engine"><span class="chip">正在读取引擎状态…</span></div>
+    <button class="themer" id="themer" type="button" aria-label="切换配色">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/>
+      </svg>
+      <span id="themeTxt">跟随系统</span>
+    </button>
+  </header>
+
+  <div class="alert" id="modelWarn" role="alert" hidden></div>
+
+  <div class="bench">
+
+    <!-- ==================== 控制台 ==================== -->
+    <section class="console" id="console" aria-label="控制台">
+
+      <div class="grp reveal" style="--d:.04s">
+        <div class="eyebrow"><span>1 选图</span><i></i></div>
+        <div class="drop" id="drop" role="button" tabindex="0" aria-label="选择图片，或者把图片拖到这里">
+          <strong>拖入图片</strong>
+          <small>或点这里选文件 · PNG / JPG / WEBP / TIFF · 单张不超过 40 MB</small>
+        </div>
+        <input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff" hidden>
+        <div class="loaded" id="loaded" hidden>
+          <img id="thumb" alt="已选图片的缩略图">
+          <div class="meta">
+            <strong id="fname"></strong>
+            <code id="fdim"></code>
+          </div>
+          <div class="btns">
+            <button class="mini" id="replace" type="button">换一张</button>
+            <button class="mini" id="clear" type="button">移除</button>
+          </div>
+        </div>
+        <div class="samples" id="samples" hidden>
+          <p class="hint">没有合适的图？下面三张是<b>合成的示例</b>，专挑放大算法最容易失手的地方做：</p>
+          <div class="row" id="sampleRow"></div>
+        </div>
+      </div>
+
+      <div class="grp reveal" style="--d:.08s">
+        <div class="eyebrow"><span>2 这是什么图</span><i></i><em id="modelCount"></em></div>
+        <div class="picks" id="presets" data-kind="pick"></div>
+      </div>
+
+      <div class="grp reveal" style="--d:.12s">
+        <div class="eyebrow"><span>3 放大多少倍</span><i></i></div>
+        <div class="seg" id="scales" data-kind="opt" role="radiogroup" aria-label="放大倍数"></div>
+        <div class="readout" id="readout"><span>载入图片后这里会算出输出尺寸</span></div>
+        <div class="notice" id="sizeWarn" hidden></div>
+      </div>
+
+      <div class="grp reveal" style="--d:.16s">
+        <div class="eyebrow"><span>4 要不要降噪</span><i></i></div>
+        <div class="seg" id="denoise" data-kind="opt" role="radiogroup" aria-label="降噪程度"></div>
+        <p class="hint">图上有噪点、颗粒、JPEG 杂色就往上调；本来就干净就选「关」。</p>
+        <p class="hint" id="denoiseNote" hidden></p>
+      </div>
+
+      <div class="grp reveal" style="--d:.2s">
+        <button class="go" id="go" type="button" disabled>开始放大</button>
+        <div class="prog" id="prog" hidden>
+          <div class="rule" role="progressbar" aria-labelledby="progStage"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="ruleBar">
+            <span class="fill" id="fill"></span>
+            <span class="ticks" id="ticks"></span>
+          </div>
+          <div class="pline"><span id="progStage">准备中</span><span id="progTime">0.0 s</span></div>
+          <div class="pline"><span id="progModel" class="hint"></span></div>
+        </div>
+        <!-- 「结果存哪了」这条提醒原来挂在光台下面（下载键旁边）。它整条横在光台和
+             放大镜中间，一句提醒就吃掉 63 px 的行高 —— 而这一屏要同时装下那两块
+             （见 app.css 里 .lightbox 那段算账），所以搬回「开始放大」底下：
+             按完键就在这儿告诉你结果落在哪，比挂到右边更顺。
+             文案里写的「右边的下载」说的还是右边那一栏，位置没变，话没说过头。 -->
+        <div class="notice" id="saveNote" hidden></div>
+        <div class="alert" id="err" role="alert" hidden></div>
+        <p class="sr-only" aria-live="polite" id="live"></p>
+      </div>
+
+      <details class="adv reveal" style="--d:.24s">
+        <summary>更多设置与引擎信息</summary>
+        <div class="body">
+          <div class="fieldrow">
+            <span class="label">结果去向</span>
+            <div class="seg" id="keepMode" data-kind="opt" role="radiogroup" aria-label="结果保存方式"></div>
+          </div>
+          <p class="hint" id="keepNote"></p>
+          <p class="hint" id="diskNote"></p>
+          <div class="fieldrow">
+            <label for="tile">分块边长</label>
+            <select id="tile"></select>
+          </div>
+          <p class="hint" id="tileNote"></p>
+          <p class="hint" id="engineNote"></p>
+        </div>
+      </details>
+
+    </section>
+
+    <!-- ==================== 光台 ==================== -->
+    <section class="lightbox" aria-label="对照台">
+
+      <div class="bar reveal" style="--d:.06s">
+        <div class="eyebrow"><span>对照台</span><i></i></div>
+        <div class="legend">
+          <span><i style="background:var(--stage-mute)"></i>原图</span>
+          <span><i style="background:var(--accent)"></i>AI 放大</span>
+        </div>
+      </div>
+
+      <div class="stagebox reveal" style="--d:.1s">
+        <div class="viewport" id="viewport" style="--ar:3/2;--arn:1.5;--split:50%">
+          <img class="layer-after" id="imgAfter" alt="放大结果">
+          <div class="layer-before" id="layerBefore"><img id="imgBefore" alt="原图"></div>
+          <span class="reg" style="left:6px;top:6px;border-right:0;border-bottom:0"></span>
+          <span class="reg" style="right:6px;top:6px;border-left:0;border-bottom:0"></span>
+          <span class="reg" style="left:6px;bottom:6px;border-right:0;border-top:0"></span>
+          <span class="reg" style="right:6px;bottom:6px;border-left:0;border-top:0"></span>
+
+          <div class="empty-state" id="emptyState">
+            <div class="fig">— × —</div>
+            <p>还没有载入图片。用<b>第 1 步</b>选一张、或直接拖进来，结果会和原图叠在同一块光台上，拖中间那根竖线就能来回比。</p>
+          </div>
+
+          <span class="corner l" id="cornerL" hidden></span>
+          <span class="corner r" id="cornerR" hidden></span>
+          <span class="cross" id="cross" hidden></span>
+          <span class="divider" id="divider" hidden></span>
+          <button class="grip" id="grip" type="button" role="slider" hidden
+                  aria-label="对照分割线位置" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+            <i><b></b><b></b></i>
+          </button>
+
+          <div class="overlay" id="overlay" hidden>
+            <div class="pct" id="ovPct">0%</div>
+            <div class="lbl" id="ovLbl">正在装载模型</div>
+            <div class="scan"></div>
+          </div>
+        </div>
+        <span class="fsHint">拖竖线对比 · ← → 微调 · Esc 退出全屏 · 右侧跟着鼠标看细节</span>
+      </div>
+
+      <div class="toolbar reveal" style="--d:.14s">
+        <span class="hint grow" id="stageNote">结果出来后，把鼠标放到图上，下面的放大镜会跟上。</span>
+        <button class="dl" id="fs" type="button" aria-pressed="false" aria-disabled="true">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M4 9V4h5M20 15v5h-5M20 9V4h-5M4 15v5h5"/>
+          </svg>
+          <span id="fsText">全屏对比</span>
+        </button>
+        <a class="dl" id="dl" href="#" aria-disabled="true">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M12 3v12M7 11l5 5 5-5M4 20h16"/>
+          </svg>
+          <span id="dlText">下载结果</span>
+        </a>
+      </div>
+
+      <!-- 放大镜排在「这次改了什么」**前面** —— 用户要求「放大镜靠前」：
+           那块折叠栏一展开就是几十行计量表，放大镜跟在它后面容易被推出屏幕。
+           全屏时这一块会被挪进光台右侧复用同一套 DOM，
+           退出全屏再放回这里（见 moveLoupe）。 -->
+      <div id="loupeSlot">
+        <section class="loupe reveal" id="loupe" style="--d:.18s" hidden>
+          <div class="bar">
+            <div class="eyebrow"><span>放大镜</span><i></i></div>
+            <div class="seg" id="zoom" role="radiogroup"
+                 aria-label="放大镜倍率：屏幕像素比输出像素"></div>
+          </div>
+          <!-- 滑块和上面那排档位是同一件事的两个入口：滑块随便调，档位一键跳。
+               拖了滑块就没有哪个档位亮着 —— 那是正常的，不是坏了。 -->
+          <div class="spanrow" id="spanRow">
+            <label for="span">取景</label>
+            <output id="spanOut" for="span">—</output>
+            <span class="spanEnd">多</span>
+            <input type="range" id="span" min="0" max="1000" step="1" value="1000"
+                   aria-label="放大镜取景范围：往左一格装下更多画面，往右看得更细">
+            <span class="spanEnd">细</span>
+          </div>
+          <div class="panes" id="panes">
+            <figure class="pane nn">
+              <div class="win" id="paneIn">
+                <img id="imIn" alt="原图的像素块，最近邻放大">
+                <span class="spin"><i>取块中…</i></span>
+              </div>
+              <figcaption class="cap"><b>原图</b><code id="capIn"></code></figcaption>
+            </figure>
+            <figure class="pane bic">
+              <div class="win" id="paneBic">
+                <img id="imBic" alt="同一块画面的双三次插值放大">
+                <span class="spin"><i>取块中…</i></span>
+              </div>
+              <figcaption class="cap"><b>双三次</b><code id="capBic"></code></figcaption>
+            </figure>
+            <figure class="pane ai">
+              <div class="win" id="paneAi">
+                <img id="imAi" alt="同一块画面的 AI 放大结果">
+                <span class="spin"><i>取块中…</i></span>
+              </div>
+              <figcaption class="cap"><b>AI 放大</b><code id="capAi"></code></figcaption>
+            </figure>
+          </div>
+          <p class="hint" id="bicNote" hidden></p>
+          <p class="hint" id="zoomNote"></p>
+        </section>
+      </div>
+
+      <details class="adv reveal" id="ledgerWrap" style="--d:.22s" hidden>
+        <summary>这次改了什么 · 把鼠标移到图上看细节</summary>
+        <div class="body">
+          <div class="eyebrow"><span>计量表</span><i></i><em id="jobId"></em></div>
+          <div id="ledger"></div>
+        </div>
+      </details>
+
+    </section>
+  </div>
+
+  <footer class="foot reveal" style="--d:.3s">
+    <p>权重是 waifu2x（CUnet / Swin-UNet）与 Real-ESRGAN、AnimeSharp 的 ONNX 版本，全部在你本机推理，图片不出这台机器。</p>
+    <details>
+      <summary>两个必须说清的坑</summary>
+      <p><b>一、waifu2x 系在 DirectML 上会算错。</b>不报错，但结果是花的。所以程序在装载时拿同一块输入同时在 GPU 和 CPU 上各跑一遍、比对数值，
+        不一致就退回 CPU，结论缓存在 <code>models/.device_probe.json</code>。Real-ESRGAN 与 AnimeSharp 在 DirectML 上正常，会留在 GPU 上跑。</p>
+      <p><b>二、各族的输入输出约定不一样。</b>waifu2x 会吃掉一圈边界像素（CUnet 是 <code>out = 2×in − 72</code>，Swin 是 <code>out = 2×in − 32</code>），
+        Real-ESRGAN 系则是干净的 <code>out = 4×in</code>。程序启动时用小图试探两个尺寸、拟合出 <code>out = a×in + b</code>，据此决定外扩与裁切，不写死魔数。</p>
+    </details>
+  </footer>
+
+</div>
+
+<noscript><p style="padding:24px">这个页面靠 JavaScript 调用本地推理接口，请在浏览器里开启 JavaScript。</p></noscript>
+
+<script src="/js/app.js"></script>
+</body>
+</html>

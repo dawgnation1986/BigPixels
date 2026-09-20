@@ -1,0 +1,11 @@
+numpy>=2.0
+pillow>=10.0
+
+# 推理后端按平台挑一个 —— 两个都写、用环境标记分开，
+# 这样 Windows 和 macOS/Linux 都能直接 pip install -r requirements.txt，
+# 不用让用户自己去判断该装哪个。
+#
+# Windows：DirectML 直接吃显卡（NVIDIA / AMD / Intel 集显都行），免装 CUDA
+onnxruntime-directml>=1.18; sys_platform == "win32"
+# 其它平台：CPU 版。想用显卡就自己装 onnxruntime-gpu，见 README
+onnxruntime>=1.18; sys_platform != "win32"

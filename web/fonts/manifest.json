@@ -1,0 +1,48 @@
+[
+  {
+    "family": "Archivo",
+    "weight": 600,
+    "file": "archivo-600.woff2"
+  },
+  {
+    "family": "Archivo",
+    "weight": 700,
+    "file": "archivo-700.woff2"
+  },
+  {
+    "family": "IBM Plex Sans",
+    "weight": 400,
+    "file": "ibm-plex-sans-400.woff2"
+  },
+  {
+    "family": "IBM Plex Sans",
+    "weight": 500,
+    "file": "ibm-plex-sans-500.woff2"
+  },
+  {
+    "family": "IBM Plex Sans",
+    "weight": 600,
+    "file": "ibm-plex-sans-600.woff2"
+  },
+  {
+    "family": "IBM Plex Mono",
+    "weight": 400,
+    "file": "ibm-plex-mono-400.woff2"
+  },
+  {
+    "family": "IBM Plex Mono",
+    "weight": 500,
+    "file": "ibm-plex-mono-500.woff2"
+  },
+  {
+    "family": "IBM Plex Mono",
+    "weight": 600,
+    "file": "ibm-plex-mono-600.woff2"
+  },
+  {
+    "family": "IBM Plex Mono",
+    "weight": "400-600",
+    "file": "plex-mono-symbols.woff2",
+    "range": "U+2192,U+2248"
+  }
+]
