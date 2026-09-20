@@ -20,6 +20,7 @@
 # 产物与中间缓存
 /outputs/
 /.cache/
+/dist/
 
 # Python
 __pycache__/
