@@ -63,6 +63,7 @@ import math
 import os
 import queue
 import re
+import socket
 import sys
 import threading
 import time
@@ -1281,6 +1282,129 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._json({"id": jid})
 
 
+# --------------------------------------------------------------------------- #
+# 对外报哪个地址 —— 别把 bind 地址当目的地址用
+# --------------------------------------------------------------------------- #
+# 这是个真踩过的坑：双击启动那条路，服务明明起得好好的，浏览器却说"无法访问此页面"，
+# 窗口里那一行写着 http://0.0.0.0:8765。
+#
+# 原因是 0.0.0.0 是**通配地址**，它的意思是「所有网卡都收」——那是给 bind() 看的。
+# 它本身不是一个能连的目的地址，浏览器拿它当目标就直接拒（Windows/Chrome 上
+# 报 ERR_ADDRESS_INVALID）。所以：**绑在哪儿**和**从哪儿能打开**要分开算。
+WILDCARD_HOSTS = ("", "*", "0.0.0.0", "::", "[::]", "0:0:0:0:0:0:0:0")
+
+# 这几个网段的地址**看着像内网、其实别的设备连不上**，不能当成"局域网地址"报出去：
+#   198.18.0.0/15 —— RFC 2544 的性能测试网段，代理软件的 TUN 网卡爱用
+#   127.0.0.0/8 —— 回环  169.254.0.0/16 —— 没拿到 DHCP 时的自分配地址
+# 实测这台机器上代理的 TUN 就占了 198.18.0.1，而且**默认路由在它手上** ——
+# 于是「connect 一个外网地址看内核挑了哪张网卡」这个常用探针每次都返回它。
+# 所以不能只信探针：要枚举所有网卡，再按可连性排个优先级。
+_IGNORE_NETS = ("127.0.0.0/8", "169.254.0.0/16", "198.18.0.0/15")
+# 越靠前越像"真·局域网"：家里的 192.168、公司的 10.x，172.16/12 是 Docker 之类的常客
+_PREFER_NETS = ("192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12")
+
+
+def _probe_ip() -> str | None:
+    """内核到外网会走哪张网卡。不发任何包（UDP connect 只是选路），但可能被 TUN 带偏。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 1))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
+def _ipv4_candidates() -> list[str]:
+    """本机能拿出来的局域网 IPv4，最像"真局域网"的排前面。
+
+    枚举（hostname 解析）+ 探针两条路一起用：枚举能拿到所有网卡，探针在 DNS 不好使时兜底。
+    两边都会被虚拟网卡污染，所以统一过一遍筛子。
+    """
+    import ipaddress
+    cands: list[str] = []
+    try:
+        cands += [ai[4][0] for ai in socket.getaddrinfo(socket.gethostname(), None,
+                                                         socket.AF_INET)]
+    except OSError:
+        pass
+    p = _probe_ip()
+    if p:
+        cands.append(p)
+
+    ignore = [ipaddress.ip_network(n) for n in _IGNORE_NETS]
+    keep: list[str] = []
+    for c in cands:
+        try:
+            a = ipaddress.ip_address(c)
+        except ValueError:
+            continue
+        if a.is_loopback or a.is_link_local or any(a in n for n in ignore):
+            continue
+        if c not in keep:
+            keep.append(c)
+
+    prefer = [ipaddress.ip_network(n) for n in _PREFER_NETS]
+
+    def rank(c: str) -> int:
+        a = ipaddress.ip_address(c)
+        for i, n in enumerate(prefer):
+            if a in n:
+                return i
+        return len(prefer)
+
+    return sorted(keep, key=rank)
+
+
+def _local_ipv4s() -> list[str]:
+    """给启动横幅用：探不到就返回空列表。
+
+    外面包一层是刻意的 —— 这只是**顺手指个路**，不该有本事让服务起不来。
+    上面那个 `_ipv4_candidates()` 里要是有个网段字符串写错了，真身会抛 ValueError，
+    而人看到的就是"双击启动闪一下就没了"。所以这里降级成"不提示"，
+    同时让 `smoke.py` 直接测真身 —— 写错了在自检里报出来，而不是留给用户去踩。
+    """
+    try:
+        return _ipv4_candidates()
+    except Exception:
+        return []
+
+
+def _port_has_listener(host: str, port: int) -> bool:
+    """端口上是不是已经有人在服务了（真连一下，连得上才算）。
+
+    为什么不能只看 bind 报不报错：Windows 上 `allow_reuse_address=1`（http.server 的默认）
+    允许**第二个进程绑同一个端口**，Linux 会直接拒。于是"端口被占"这个错在 Windows 上
+    根本不会出现 —— 两个服务抢一个端口，请求全归后绑的那个，之前那个窗口还在傻等，
+    用户看到的是"我改了代码怎么没生效"。真连一下就没有这个盲区：
+    TIME_WAIT 里的旧 socket 不会 accept，所以正常重启不会误报。
+    """
+    probe = "127.0.0.1" if host in WILDCARD_HOSTS else host
+    s = socket.socket()
+    s.settimeout(0.4)
+    try:
+        s.connect((probe, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def _reachable_urls(host: str, port: int) -> tuple[str, list[str]]:
+    """把「绑在哪儿」翻译成「从哪儿能打开」：返回 (主地址, 局域网地址列表)。
+
+    绑了所有网卡时主地址用 127.0.0.1（本机肯定连得上），再附上枚举到的局域网地址 ——
+    绑 0.0.0.0 的用处本来就是想让手机/平板也能开，那就把该敲的地址直接给出来。
+    指定了具体地址（--host 192.168.x.x）就照实报，不替用户改。
+    """
+    if host in WILDCARD_HOSTS:
+        ips = _local_ipv4s()
+        return f"http://127.0.0.1:{port}/", [f"http://{ip}:{port}/" for ip in ips]
+    return f"http://{host}:{port}/", []
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser()
@@ -1309,7 +1433,27 @@ def main():
     threading.Thread(target=worker, daemon=True).start()
     n = restore_jobs()
 
-    print(f"BigPixels 本地版已启动： http://{a.host}:{a.port}")
+    # 先把端口占住，再说"已启动"。反过来的话端口被占时会先打一行"已启动 http://…"、
+    # 紧接着才报起不来 —— 那行假消息最容易把人带沟里。
+    # （Windows 上它甚至不会报错，见 _port_has_listener 的说明。）
+    busy = _port_has_listener(a.host, a.port)
+    try:
+        srv = http.server.ThreadingHTTPServer((a.host, a.port), Handler)
+    except OSError as e:
+        sys.exit(f"端口 {a.port} 起不来：{e}\n换个端口：python app/server/server.py --port 8766")
+    srv.daemon_threads = True
+
+    if busy:
+        print(f"  ！{a.port} 上已经有一个服务在跑了（多半是上一次那个窗口还开着）。")
+        print("     两个抢一个端口，请求只会跑到后起的那个 —— 想确认自己跑的是新代码，")
+        print("     就把旧窗口关掉再启动，或者换个端口。")
+
+    base_url, lan_urls = _reachable_urls(a.host, a.port)
+    print(f"BigPixels 本地版已启动： {base_url}")
+    if lan_urls:
+        print("  同一个 Wi-Fi 下也能开（手机、平板都行）： " + "  ".join(lan_urls))
+        print("  （默认绑在所有网卡上，同一个网络里的人都能打开；只想自己用就加 "
+              "--host 127.0.0.1）")
     print_model_report(model_report())
     print(f"工程目录 {WORK_DIR}"
           + (f"  ·  已有 {n} 次工程" if n else "")
@@ -1320,18 +1464,12 @@ def main():
         print(f"  （设置存在 {SETTINGS_PATH}，改回保存模式：运行后打开界面「更多设置」切一下）")
     print("按 Ctrl+C 停止")
 
-    try:
-        srv = http.server.ThreadingHTTPServer((a.host, a.port), Handler)
-    except OSError as e:
-        sys.exit(f"端口 {a.port} 起不来：{e}\n换个端口：python app/server/server.py --port 8766")
-    srv.daemon_threads = True
-
     if a.open_browser:
         # 已经 bind + listen 过了，所以现在开浏览器不会扑空：
         # 那次请求会先排在内核的等待队列里，等 serve_forever 起来就有人接。
         # 不自己按秒数猜延迟 —— 猜短了用户看到一个「无法访问」的页面，
         # 还以为是我们坏了。开不起来（没有桌面环境之类）也只是提示一句，不影响服务。
-        url = f"http://{a.host}:{a.port}/"
+        url = base_url
         try:
             webbrowser.open(url)
             print(f"已经替你打开浏览器：{url}")

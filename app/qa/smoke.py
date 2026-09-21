@@ -18,6 +18,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import sys
 import tempfile
 import time
@@ -335,6 +336,43 @@ def main():
     import app.server.server as S                                 # noqa: E402
     again = S.migrate_layout()
     check(again["runs"] == 0, "旧版归档是幂等的（再跑一遍一无所获）", str(again))
+
+    # 对外报的地址必须是**能连的**地址。0.0.0.0 是 bind() 用的通配地址，
+    # 拿它当目的地址塞进浏览器就是 ERR_ADDRESS_INVALID —— 双击启动那条路这么挂过：
+    # 服务明明起来了，浏览器说「无法访问此页面」。这个函数就是防它退回去的。
+    u, lan = S._reachable_urls("0.0.0.0", 8765)
+    check(u == "http://127.0.0.1:8765/", "绑所有网卡时对外报 127.0.0.1", u)
+    check(bool(lan) and all(x.startswith("http://") and "0.0.0.0" not in x for x in lan),
+          "顺手给出局域网地址（手机也能开），且不含通配地址",
+          "  ".join(lan) if lan else "这台机器没探到，跳过")
+    ips = S._ipv4_candidates()
+    bogus = [x for x in ips if x.startswith(("198.18.", "198.19.", "169.254.", "127."))]
+    check(not bogus, "代理/VPN 的虚拟网卡地址不会被当成局域网地址",
+          f"{ips}（剔除 {bogus}）" if bogus else str(ips))
+    # 地址探测只是"顺手指个路"，写错了也不能让服务起不来 —— 外面那层 try 守的就是这个。
+    # 这里把真身换成一个会炸的，确认降级路径真的生效（而不是写了个没人走的 except）。
+    _real = S._ipv4_candidates
+    S._ipv4_candidates = lambda: (_ for _ in ()).throw(ValueError("模拟网段字符串写错"))
+    try:
+        degraded = S._local_ipv4s() == []
+    finally:
+        S._ipv4_candidates = _real
+    check(degraded, "地址探测炸了只降级成不提示，不拖垮启动", "已模拟 ValueError")
+    # 端口占用探针：正在跑的这个端口必须探得到（否则这个功能是摆设），
+    # 随便挑个没人用的端口必须探不到（否则正常重启会被误报）。
+    check(S._port_has_listener("0.0.0.0", a.port), "端口占用探针：正在服务的端口探得到",
+          f"{a.port} 上有服务")
+    _probe = socket.socket()
+    _probe.bind(("127.0.0.1", 0))
+    free = _probe.getsockname()[1]
+    _probe.close()
+    check(not S._port_has_listener("0.0.0.0", free), "端口占用探针：空闲端口不误报",
+          f"{free} 空着")
+    u2, lan2 = S._reachable_urls("::", 8765)
+    check(u2 == "http://127.0.0.1:8765/", "IPv6 通配 :: 同样换掉", u2)
+    u3, lan3 = S._reachable_urls("192.168.1.7", 8765)
+    check(u3 == "http://192.168.1.7:8765/" and not lan3,
+          "指定了具体地址就照实报，不替用户改", u3)
 
     # 10. 模型自检 + 保存/暂存
     m = cfg.get("models") or {}
