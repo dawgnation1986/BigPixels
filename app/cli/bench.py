@@ -23,7 +23,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from app.core import upscale as U               # noqa: E402
+import app.core as U                            # noqa: E402
 from app.core.metrics import psnr, ssim         # noqa: E402  指标只此一份，离线和网页端共用
 SAMP = os.path.join(ROOT, "samples")
 OUT = os.path.join(ROOT, "outputs", "bench")
@@ -150,6 +150,35 @@ def main():
         print(f"{s:<8}{p:<10}{dn:<10}{b['psnr']:>14.2f}{ap_:>12.2f}{ap_-b['psnr']:>+9.2f}"
               f"{b['ssim']:>15.4f}{as_:>12.4f}{el:>8.1f}s")
     print("=" * 96)
+
+    # ---- 门禁：光打印不断言等于没测 ----
+    # 原本这里只出表，「插画要比双三次高 2dB」「降噪档要单调」两条规矩全靠人眼看，
+    # 改坏了也不会红。补上，让 bench 真的能拦住回归。
+    bad: list[str] = []
+    # 只对插画样本立这条规矩。照片样本上 PSNR 本来就不是合适的尺子 —— 感知型模型
+    # 会「造」一些原图没有的纹理，对着干净 GT 算 PSNR 反而不如双三次，
+    # 拿它当门禁只会天天误报。
+    for s in sorted({r[0] for r in rows if r[0] == "art"}):
+        gains = [r[4] - r[3]["psnr"] for r in rows if r[0] == s]
+        if max(gains) < 2.0:
+            bad.append(f"{s}：最好的预设也只比双三次高 {max(gains):+.2f} dB（要求 ≥ +2.00）")
+
+    # 降噪档单调：只在带噪样本上说得通（干净图加大降噪本来就可能糊）。
+    ORDER = {"none": 0, "low": 1, "medium": 2, "high": 3, "highest": 4}
+    for key in sorted({(r[0], r[1]) for r in rows if "noisy" in r[0]}):
+        seq = sorted((ORDER[r[2]], r[4] - r[3]["psnr"]) for r in rows if (r[0], r[1]) == key)
+        vals = [g for _, g in seq]
+        if any(b < a - 0.05 for a, b in zip(vals, vals[1:])):
+            bad.append(f"{key[0]}/{key[1]}：降噪档不单调 "
+                       f"{['%+.2f' % v for v in vals]}（降噪越强不该越差）")
+
+    if bad:
+        print("\n不达标：")
+        for b in bad:
+            print(f"  ✗ {b}")
+        print("\n对比图已输出到 " + OUT)
+        sys.exit(1)
+    print("门禁通过：插画样本有明显增益、带噪样本降噪档单调")
     print(f"对比图已输出到 {OUT}")
 
 
