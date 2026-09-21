@@ -808,7 +808,10 @@ def run_job(jid: str) -> None:
         if sh_g > 0:
             j["stage"] = f"收尾锐化（清晰度 {j.get('clear', 'normal')}）"
             cur = U.unsharp(cur, sh_r, sh_g)
-        j["sharp_radius"], j["sharp_gain"] = sh_r, round(sh_g, 3)
+        # 注意：这里存的是「引擎参数」，字段名别跟指标 res["sharp_gain"]（锐度倍率，
+        # 后面 j.update(measure(...)) 会写进来）撞车 —— 撞了的话界面会把 49.4 这种
+        # 倍率当成锐化增益显示出来。
+        j["sharp_radius"], j["sharp_amount"] = sh_r, round(sh_g, 3)
 
         j["stage"] = "保存结果"
         j["progress"] = 100

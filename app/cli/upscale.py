@@ -87,7 +87,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="BigPixels：深度卷积网络放大 2/4/8/16 倍")
     ap.add_argument("input", nargs="?", help="输入图片或目录")
     ap.add_argument("-o", "--output", help="输出图片或目录")
-    ap.add_argument("--preset", default="art", help="预设：" + "/".join(PRESETS))
+    ap.add_argument("--preset", default="anime", help="预设：" + "/".join(PRESETS))
     ap.add_argument("--scale", type=int, default=4, choices=[1, 2, 4, 8, 16], help="放大倍率")
     ap.add_argument("--denoise", default="medium", help="降噪程度：" + "/".join(DENOISE_LEVELS))
     ap.add_argument("--clear", default="normal",
@@ -99,6 +99,14 @@ def main(argv=None):
     ap.add_argument("--list", action="store_true", help="列出预设")
     ap.add_argument("--info", action="store_true", help="显示设备与模型状态")
     args = ap.parse_args(argv)
+
+    # --clear 允许直接给数字（调参时最省事）：这里把数字串转成 float，
+    # 否则 "4.0" 会被当成档位名、报「未知清晰度 '4.0'」——帮助里写着能用就不该挡。
+    if args.clear not in CLEAR_LEVELS:
+        try:
+            args.clear = float(args.clear)
+        except ValueError:
+            raise SystemExit(f"未知清晰度 '{args.clear}'，可选：{', '.join(CLEAR_LEVELS)}，或直接给数字（如 2.5）")
 
     if args.list:
         for k, v in PRESETS.items():
@@ -138,7 +146,8 @@ def main(argv=None):
     print(f"  设备 {runner.device.upper()} | 网络原生 {runner.scale}x | 目标 {args.scale}x "
           f"| 串联 {passes} 次 | 外扩 {runner.pad}px / 裁回 {runner.crop}px | 瓦片 {runner.tile}(+{runner.overlap})")
     _r, _g = resolve_sharpen(args.preset, args.clear)
-    print(f"  清晰度 {args.clear}（锐化半径 {_r}px · 增益 {_g:.2f}）")
+    _label = args.clear if isinstance(args.clear, str) else "自定义"
+    print(f"  清晰度 {_label}（锐化半径 {_r}px · 增益 {_g:.2f}）")
 
     for i, (f, out) in enumerate(targets, 1):
         rgb, alpha, mode = load_image(f)

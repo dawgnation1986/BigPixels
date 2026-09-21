@@ -53,7 +53,7 @@ const S = {
   result: null,
   timer: null,
   ticks: 0,
-  sel: {preset: "art", scale: 4, denoise: "medium", clear: "normal", tile: 256},
+  sel: {preset: "anime", scale: 4, denoise: "medium", clear: "normal", tile: 256},
   split: 50,
   zoom: 1,
   zoomOn: null,     // 当前选中的预设档（拖过滑块就是 null —— 这时没有哪个档位被选中）
@@ -1027,8 +1027,8 @@ function renderLedger(j) {
   const run =
     row("模型", (j.preset_label || "—") + U(" · 降噪 " + (j.denoise ? dnLabel(j.denoise) : "—"))) +
     row("清晰度", clearLabel(j.clear || "normal") +
-        U(j.sharp_gain ? " · 收尾锐化 半径 " + j.sharp_radius + " px / 增益 " + j.sharp_gain : ""),
-        j.sharp_gain ? "网络出来的边是渐变过渡，这一步只把边缘收回来；平坦区不动，所以不会磨出噪点。" : "这一档没做任何锐化，输出就是网络的原始结果。") +
+        U(j.sharp_amount ? " · 收尾锐化 半径 " + j.sharp_radius + " px / 增益 " + j.sharp_amount : ""),
+        j.sharp_amount ? "网络出来的边是渐变过渡，这一步只把边缘收回来；平坦区不动，所以不会磨出噪点。" : "这一档没做任何锐化，输出就是网络的原始结果。") +
     row("后端", (j.device || "—") + U(" · 分块 " + num(j.tile, v => v) + " px")) +
     row("权重", String(j.model || "").replace(/\.onnx$/, "") || "—", null, true);
 

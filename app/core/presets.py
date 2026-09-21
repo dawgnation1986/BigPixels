@@ -18,14 +18,32 @@ from .paths import MODEL_DIR
 # sharp: 收尾锐化的基准强度 (半径 px, 增益)。增益 = 该像素比高斯模糊版多出来的量乘几倍。
 #   为什么需要它：网络出来的边缘天然是「渐变」的。waifu2x CUnet 尤其软 ——
 #   4x 之后一条 1px 的线会摊成 4~7px 的灰带，细线整个糊掉。
-#   实测（351×1295 的动漫插画 → 4x，拉普拉斯方差，越大越锐）：
-#       双三次/Lanczos 基线 9.8 · art 原样 100 · art+锐化 872 · bigjpg 4x 卡通 914
 #   锐化只在边缘起作用：平坦区 32×32 块的 std 始终 0.00，不会把干净的地方磨出噪点。
 #   照片档给得保守（真实噪声会被一起放大），插画档给得足。
+#
+#   ⚠️ 但锐化只是补救，**主因是选哪个预训练权重**。同一张 351×1295 动漫插画 → 4x，
+#   对线上 bigjpg 的 4x 卡通（细节热点区的拉普拉斯方差 = 3279，当作 100%）：
+#       动漫插画 4x-AnimeSharp（原生 4× 一次推理） 3512 → 107%
+#       卡通/插画 waifu2x CUnet（2× 串联两次）     1133 →  35%
+#       通用场景 Real-ESRGAN x4plus                1219 →  37%
+#       插画高清 waifu2x Swin（2× 串联两次）        936 →  29%
+#   差的这 3 倍锐化追不回来 —— 把增益往上加只会连对比度和噪点一起抬起来
+#   （实测增益 2 → 6：锐度到 2241，但局部对比度 62.9 vs bigjpg 41.3、平块噪声 ×3）。
+#   所以对二次元插画**该选 anime 而不是 art**；串联两次的 2× 网络本身就在丢细节。
+#   注：下面 sharp 的数值是「锐化该给多少」，与上面这个「选哪个权重」是两回事。
 PRESETS: dict[str, dict] = {
+    "anime": {
+        "label": "动漫插画",
+        "desc": "彩色二次元插画 / 原画 —— 细节保留最多、线条最硬，走 GPU 还最快",
+        "tech": "4x-AnimeSharp · 原生 4× · 68 MB · 单权重，无降噪档",
+        "noise": {0: "4x-AnimeSharp.onnx"},
+        "dn_only": None,
+        "hint": 4,
+        "sharp": (1.0, 0.85),
+    },
     "art": {
-        "label": "卡通 / 插画",
-        "desc": "卡通、插画、线稿都能用，速度最快",
+        "label": "卡通 / 插画（轻量）",
+        "desc": "waifu2x 老模型，结果偏「软」偏保守；只能 CPU 跑，反而比上一档慢",
         "tech": "waifu2x CUnet · 原生 2× · 4.9 MB/档 · 带四档降噪权重",
         "noise": {
             0: "waifu2x_cunet_art_noise0_2x.onnx",
@@ -39,7 +57,7 @@ PRESETS: dict[str, dict] = {
     },
     "art-hd": {
         "label": "插画 高清",
-        "desc": "插画专用，比上一档更干净，也更慢",
+        "desc": "waifu2x Swin 版，比「轻量」干净一点，同样是 2× 串联",
         "tech": "waifu2x Swin-UNet · 原生 2× · 16 MB/档 · 带四档降噪权重",
         "noise": {
             0: "waifu2x_swin_art_noise0_2x.onnx",
@@ -50,6 +68,15 @@ PRESETS: dict[str, dict] = {
         "dn_only": None,
         "hint": 2,
         "sharp": (1.1, 1.6),
+    },
+    "esrgan": {
+        "label": "通用场景",
+        "desc": "照片和插画都行，最不容易出错；细节不如「动漫插画」",
+        "tech": "Real-ESRGAN x4plus · 原生 4× · 68 MB · 单权重，无降噪档",
+        "noise": {0: "RealESRGAN_x4plus.onnx"},
+        "dn_only": None,
+        "hint": 4,
+        "sharp": (0.8, 0.6),
     },
     "photo": {
         "label": "照片 / 实拍",
@@ -64,24 +91,6 @@ PRESETS: dict[str, dict] = {
         "dn_only": None,
         "hint": 2,
         "sharp": (0.8, 0.6),
-    },
-    "esrgan": {
-        "label": "通用场景",
-        "desc": "照片和插画都行，适用范围最广",
-        "tech": "Real-ESRGAN x4plus · 原生 4× · 68 MB · 单权重，无降噪档",
-        "noise": {0: "RealESRGAN_x4plus.onnx"},
-        "dn_only": None,
-        "hint": 4,
-        "sharp": (0.8, 0.6),
-    },
-    "anime": {
-        "label": "动漫线稿",
-        "desc": "二次元线稿专用，线条最硬",
-        "tech": "4x-AnimeSharp · 原生 4× · 68 MB · 单权重，无降噪档",
-        "noise": {0: "4x-AnimeSharp.onnx"},
-        "dn_only": None,
-        "hint": 4,
-        "sharp": (1.0, 0.85),
     },
 }
 
