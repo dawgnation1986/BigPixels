@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>BigPixels 放大台</title>
-<meta name="description" content="在你自己的机器上跑深度卷积网络放大图片：waifu2x 与 Real-ESRGAN 权重本地推理，附双三次基线与像素级放大镜对照。">
+<meta name="description" content="本机推理的深度卷积网络图片放大工具：waifu2x 与 Real-ESRGAN 权重全部本地运行，附双三次基线与像素级放大镜对照。">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect width='20' height='20' fill='%230B0D0C'/%3E%3Crect x='3.5' y='3.5' width='13' height='13' fill='none' stroke='%234FC3A1' stroke-width='1.4'/%3E%3Crect x='7' y='7' width='6' height='6' fill='%234FC3A1'/%3E%3C/svg%3E">
 <!-- 样式和脚本各自成文件（css/ 与 js/），页面只留骨架 ——
@@ -58,10 +58,10 @@
       </div>
 
       <div class="grp reveal" style="--d:.04s">
-        <div class="eyebrow"><span>1 选图</span><i></i></div>
-        <div class="drop" id="drop" role="button" tabindex="0" aria-label="选择图片，或者把图片拖到这里">
-          <strong data-touch="点这里选图">拖入图片</strong>
-          <small data-touch="PNG / JPG / WEBP / TIFF · 单张不超过 40 MB">或点这里选文件 · PNG / JPG / WEBP / TIFF · 单张不超过 40 MB</small>
+        <div class="eyebrow"><span>1 选择图片</span><i></i></div>
+        <div class="drop" id="drop" role="button" tabindex="0" aria-label="选择图片，或将图片拖到此处">
+          <strong data-touch="点此选择图片">拖入图片</strong>
+          <small data-touch="PNG / JPG / WEBP / TIFF · 单张不超过 40 MB">或点击此处选择文件 · PNG / JPG / WEBP / TIFF · 单张不超过 40 MB</small>
         </div>
         <input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff" hidden>
         <div class="loaded" id="loaded" hidden>
@@ -76,42 +76,42 @@
           </div>
         </div>
         <div class="samples" id="samples" hidden>
-          <p class="hint">没有合适的图？下面三张是<b>合成的示例</b>，专挑放大算法最容易失手的地方做：</p>
+          <p class="hint">没有合适的图片？以下三张为<b>合成示例</b>，取材自放大算法最容易出错的场景：</p>
           <div class="row" id="sampleRow"></div>
         </div>
       </div>
 
       <div class="grp reveal" style="--d:.08s">
-        <div class="eyebrow"><span>2 这是什么图</span><i></i><em id="modelCount"></em></div>
+        <div class="eyebrow"><span>2 图片类型</span><i></i><em id="modelCount"></em></div>
         <div class="picks" id="presets" data-kind="pick"></div>
       </div>
 
       <div class="grp reveal" style="--d:.12s">
-        <div class="eyebrow"><span>3 放大多少倍</span><i></i></div>
+        <div class="eyebrow"><span>3 放大倍数</span><i></i></div>
         <div class="seg" id="scales" data-kind="opt" role="radiogroup" aria-label="放大倍数"></div>
-        <div class="readout" id="readout"><span>载入图片后这里会算出输出尺寸</span></div>
+        <div class="readout" id="readout"><span>载入图片后这里将显示输出尺寸</span></div>
         <div class="notice" id="sizeWarn" hidden></div>
       </div>
 
       <div class="grp reveal" style="--d:.16s">
-        <div class="eyebrow"><span>4 要不要降噪</span><i></i></div>
+        <div class="eyebrow"><span>4 降噪程度</span><i></i></div>
         <div class="seg" id="denoise" data-kind="opt" role="radiogroup" aria-label="降噪程度"></div>
-        <p class="hint">图上有噪点、颗粒、JPEG 杂色就往上调；本来就干净就选「关」。</p>
+        <p class="hint">画面有噪点、颗粒或 JPEG 杂色时向上调；原图本身干净则选「关」。</p>
         <p class="hint" id="denoiseNote" hidden></p>
       </div>
 
       <div class="grp reveal" id="clarityGrp" style="--d:.18s">
-        <div class="eyebrow"><span>5 线条要多清楚</span><i></i></div>
+        <div class="eyebrow"><span>5 线条清晰度</span><i></i></div>
         <div class="seg" id="clarity" data-kind="opt" role="radiogroup" aria-label="清晰度"></div>
-        <p class="hint">网络出来的边是渐变过渡，细线放大后会发灰。这一档把边缘收回来；
-          想要线上那种硬线条就选「更锐」。</p>
+        <p class="hint">网络输出的边缘为渐变过渡，细线放大后会发灰，本档将边缘收回；
+          需要线上那种硬线条则选「更锐」。</p>
       </div>
 
       <div class="grp reveal" id="brightGrp" style="--d:.2s">
         <div class="eyebrow"><span>6 明暗</span><i></i></div>
         <div class="seg" id="bright" data-kind="opt" role="radiogroup" aria-label="明暗"></div>
-        <p class="hint">默认不动明暗，那样最贴原图。想要线上那种通透感就选「提亮」——
-          它整体提亮约 2%；代价是比原图亮一点，算不上更「还原」。</p>
+        <p class="hint">默认不调整明暗，此时最贴近原图。需要线上那种通透观感则选「提亮」，
+          它整体提亮约 2%；代价是比原图略亮，谈不上更「还原」。</p>
       </div>
 
       <div class="grp reveal" style="--d:.22s">
@@ -177,7 +177,7 @@
 
           <div class="empty-state" id="emptyState">
             <div class="fig">— × —</div>
-            <p data-touch="还没有载入图片。点上面的第 1 步选一张，结果会和原图叠在同一块光台上，拖中间那根竖线就能来回比。">还没有载入图片。用<b>第 1 步</b>选一张、或直接拖进来，结果会和原图叠在同一块光台上，拖中间那根竖线就能来回比。</p>
+            <p data-touch="尚未载入图片。点上方第 1 步选择一张，结果将与原图叠放在同一块光台上，拖动中间的分割线即可对比。">尚未载入图片。用<b>第 1 步</b>选择一张，或直接拖入，结果将与原图叠放在同一块光台上，拖动中间的分割线即可对比。</p>
           </div>
 
           <span class="corner l" id="cornerL" hidden></span>
@@ -195,14 +195,14 @@
             <div class="scan"></div>
           </div>
         </div>
-        <span class="fsHint" data-touch="拖竖线对比 · 点画面换区域">拖竖线对比 · ← → 微调 · Esc 退出全屏 · 右侧跟着鼠标看细节</span>
+        <span class="fsHint" data-touch="拖分割线对比 · 点画面更换区域">拖分割线对比 · ← → 微调 · Esc 退出全屏 · 右侧跟随鼠标查看细节</span>
       </div>
 
       <div class="toolbar reveal" style="--d:.14s">
         <!-- 这一行在没选图时是 HTML 里这段文案，选过图就由 app.js 的 setSource 重写。
              两处都得备一份触屏说法（这里用 data-touch），不然手机上会一直劝用户「把鼠标放到图上」。
              文案跟 app.js 里 T() 的第二段必须一致。 -->
-        <span class="hint grow" id="stageNote" data-touch="结果出来后，点一下图上看哪儿，下面的放大镜就跟到那一块。">结果出来后，把鼠标放到图上，下面的放大镜会跟上。</span>
+        <span class="hint grow" id="stageNote" data-touch="结果生成后，点一下图上想看的位置，下方放大镜会跟随到该区域。">结果生成后，将鼠标移到图上，下方放大镜将跟随该位置。</span>
         <button class="dl" id="fs" type="button" aria-pressed="false" aria-disabled="true">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path d="M4 9V4h5M20 15v5h-5M20 9V4h-5M4 15v5h5"/>
@@ -271,7 +271,7 @@
       </div>
 
       <details class="adv reveal" id="ledgerWrap" style="--d:.22s" hidden>
-        <summary data-touch="这次改了什么 · 点图上看细节">这次改了什么 · 把鼠标移到图上看细节</summary>
+        <summary data-touch="本次改动 · 点图上查看细节">本次改动 · 将鼠标移到图上查看细节</summary>
         <div class="body">
           <div class="eyebrow"><span>计量表</span><i></i><em id="jobId"></em></div>
           <div id="ledger"></div>
@@ -289,7 +289,7 @@
   <div class="drawerBar" id="drawerBar">
     <button class="dbOpen" id="drawerOpen" type="button" aria-expanded="false" aria-controls="console">
       <span class="dbTxt">
-        <b id="barName">还没选图</b>
+        <b id="barName">尚未选择图片</b>
         <span id="barSum">—</span>
       </span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -300,19 +300,19 @@
   </div>
 
   <footer class="foot reveal" style="--d:.3s">
-    <p>权重是 waifu2x（CUnet / Swin-UNet）与 Real-ESRGAN、AnimeSharp 的 ONNX 版本，全部在你本机推理，图片不出这台机器。</p>
+    <p>权重为 waifu2x（CUnet / Swin-UNet）与 Real-ESRGAN、AnimeSharp 的 ONNX 版本，全部在本机推理，图片不会离开本机。</p>
     <details>
-      <summary>两个必须说清的坑</summary>
-      <p><b>一、waifu2x 系在 DirectML 上会算错。</b>不报错，但结果是花的。所以程序在装载时拿同一块输入同时在 GPU 和 CPU 上各跑一遍、比对数值，
-        不一致就退回 CPU，结论缓存在 <code>models/.device_probe.json</code>。Real-ESRGAN 与 AnimeSharp 在 DirectML 上正常，会留在 GPU 上跑。</p>
-      <p><b>二、各族的输入输出约定不一样。</b>waifu2x 会吃掉一圈边界像素（CUnet 是 <code>out = 2×in − 72</code>，Swin 是 <code>out = 2×in − 32</code>），
-        Real-ESRGAN 系则是干净的 <code>out = 4×in</code>。程序启动时用小图试探两个尺寸、拟合出 <code>out = a×in + b</code>，据此决定外扩与裁切，不写死魔数。</p>
+      <summary>两点必须说明的限制</summary>
+      <p><b>一、waifu2x 系在 DirectML 上会算出错误结果。</b>过程不报错，但输出是花的。因此程序在装载时用同一块输入分别在 GPU 与 CPU 上各跑一遍并比对数值，
+        不一致则退回 CPU，结论缓存在 <code>models/.device_probe.json</code>。Real-ESRGAN 与 AnimeSharp 在 DirectML 上正常，会留在 GPU 上运行。</p>
+      <p><b>二、各族的输入输出约定不一致。</b>waifu2x 会扣掉一圈边界像素（CUnet 是 <code>out = 2×in − 72</code>，Swin 是 <code>out = 2×in − 32</code>），
+        Real-ESRGAN 系则是干净的 <code>out = 4×in</code>。程序启动时用小图试探两个尺寸，拟合出 <code>out = a×in + b</code>，据此决定外扩与裁切，不写死魔数。</p>
     </details>
   </footer>
 
 </div>
 
-<noscript><p style="padding:24px">这个页面靠 JavaScript 调用本地推理接口，请在浏览器里开启 JavaScript。</p></noscript>
+<noscript><p style="padding:24px">本页面依赖 JavaScript 调用本地推理接口，请在浏览器中启用 JavaScript。</p></noscript>
 
 <script src="/js/app.js"></script>
 </body>

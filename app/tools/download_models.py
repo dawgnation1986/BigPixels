@@ -24,7 +24,7 @@ BigPixels 模型自检 + 下载
     python tools/download_models.py --source hf   # 走 huggingface.co（默认走国内的 hf-mirror）
     python tools/download_models.py --dir D:\\x    # 换个模型目录（默认项目根下的 models/）
 
-    python tools/upscale.py --info                # 顺手看看引擎眼里的模型状态
+    python tools/upscale.py --info                # 查看引擎当前的模型状态
 """
 from __future__ import annotations
 
@@ -187,7 +187,7 @@ def report(good: list, bad: list, dest: str, check_only: bool):
     print(f"  合计：{len(good)} 个在 · {len(bad)} 个缺"
           + (f"，要下 {size_str(sum(b[3] for b in bad))}" if bad and not check_only else ""))
     if not bad:
-        print("  模型全齐。\n")
+        print("  模型已齐备。\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -220,8 +220,8 @@ def fetch(base: str, repo: str, path: str, name: str, want: int, dest: str) -> b
         try:
             total = head_size(url) or want
             if total != want:
-                print(f"\n     ! 上游这个文件是 {total} 字节，清单记的是 {want} —— "
-                      f"权重可能换过了，跳过它，别下一个对不上的回来")
+                print(f"\n     ! 上游该文件为 {total} 字节，清单记录为 {want} —— "
+                      f"权重可能已更新，跳过该文件，避免下载到不匹配的内容")
                 return False
             have = os.path.getsize(tmp) if os.path.exists(tmp) else 0
             if have > total:                    # 上回留下的脏 .part
@@ -229,7 +229,7 @@ def fetch(base: str, repo: str, path: str, name: str, want: int, dest: str) -> b
             got, t0 = have, time.time()
             mode = "ab" if have else "wb"
             if have:
-                print(f"\n     续传 {name}（已经有 {mb(have)}）")
+                print(f"\n     断点续传 {name}（已有 {mb(have)}）")
             with open(tmp, mode) as f:
                 while got < total:
                     end = min(got + CHUNK, total) - 1
@@ -272,7 +272,7 @@ def fetch(base: str, repo: str, path: str, name: str, want: int, dest: str) -> b
 
 
 def download(bad: list, dest: str, base: str) -> list:
-    print(f"  开始下载（源 {base}）—— 中途断了不用怕，重跑一次会断点续传\n")
+    print(f"  开始下载（源 {base}）—— 中断后重新运行即可断点续传\n")
     failed, t0 = [], time.time()
     for repo, path, name, size, _why in bad:
         if not fetch(base, repo, path, name, size, dest):
@@ -302,7 +302,7 @@ def main() -> int:
     try:
         os.makedirs(dest, exist_ok=True)
     except OSError as e:
-        print(f"  建不了模型目录 {dest}：{e}")
+        print(f"  无法创建模型目录 {dest}：{e}")
         return 2
 
     if a.force:
@@ -317,7 +317,7 @@ def main() -> int:
     if not bad:
         return 0
     if a.check:
-        print("  只是自检（--check），没有下载。去掉 --check 就会把缺的补上。\n")
+        print("  仅执行自检（--check），未下载。去掉 --check 即会补齐缺失文件。\n")
         return 1
 
     print(f"  下载总量 {size_str(sum(b[3] for b in bad))}，"
@@ -328,13 +328,13 @@ def main() -> int:
     good2, bad2 = inspect(dest)
     print()
     if not bad2:
-        print(f"  好了，{len(good2)} 个模型全齐（{size_str(TOTAL_BYTES)}）。\n")
+        print(f"  已完成，{len(good2)} 个模型齐备（{size_str(TOTAL_BYTES)}）。\n")
         return 0
     print(f"  还差 {len(bad2)} 个：{', '.join(b[2] for b in bad2)}")
-    print("  这几个是真没下下来（网络或代理）。处理办法：")
-    print("    · 直接重跑本脚本 —— 已经下好的不会再动，断在半截的会续传")
-    print("    · 挂了代理就换回镜像：--source mirror（默认）；镜像慢就 --source hf")
-    print("    · 也可以手动下好丢进上面那个模型目录，文件名要对得上\n")
+    print("  以下文件确实未能下载（网络或代理原因）。可尝试：")
+    print("    · 重新运行本脚本 —— 已下载的文件不会重复下载，中断的会断点续传")
+    print("    · 若已配置代理，改回镜像：--source mirror（默认）；镜像较慢则用 --source hf")
+    print("    · 也可手动下载后放入上述模型目录，文件名需与清单一致\n")
     return 1
 
 
@@ -342,5 +342,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print("\n  手动打断了。已经下好的都在，重跑会接着来。\n")
+        print("\n  已手动中断。已下载的文件均保留，重新运行将继续。\n")
         sys.exit(1)

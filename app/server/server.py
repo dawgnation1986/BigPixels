@@ -26,32 +26,32 @@ BigPixels 本地版 —— 网页服务，跟 CLI 共用同一套推理引擎。
     outputs/web/20260920-191402_SharkGirl_e3c72086d0a7/
         input.jpg            原图（后缀随上传）
         result.png           AI 放大结果
-        bicubic.png          双三次基线（输出太大时不做，省下整幅编码的代价）
+        bicubic.png          双三次基线（输出过大时不生成，省去整幅编码的开销）
         preview-input.png    最长边 1600 的缩略预览（光台用）
         preview-result.png
         tiles/{input,result}/  1024² 瓦片（大图才切，放大镜按需读几块）
         job.json             这条任务的完整记录
-    老版本散在外面的 {id}.png / {id}_bicubic.png / {id}_t/ 会在启动时自动归档进来，
-    而且是无损的：只在确认目标文件到位之后才删原文件。
+    旧版本散落的 {id}.png / {id}_bicubic.png / {id}_t/ 会在启动时自动归档，
+    且为无损操作：仅在确认目标文件到位之后才删除原文件。
 
 保存模式（默认）与暂存模式
     keep=true   结果就留在上面那个文件夹里，服务不做任何自动清理。
-    keep=false  结果只算暂存：条数/磁盘超了按时间淘汰，服务停止时整个工程目录清空，
-                所以界面上完成后会提醒「先下载再走」。
+    keep=false  结果仅暂存：条数/磁盘超限时按时间淘汰，服务停止时清空整个工程目录，
+                因此界面在完成后会提示「先下载」。
     设置存在 outputs/settings.json，重启后还在。
 
-三条性能上的硬规矩，都是踩过坑才立的：
+三条性能约束，均来自实际踩过的坑：
 
   1. 别对整幅图做中间运算。双三次基线的锐度只看中心 512×512，就只插值那一小块 ——
-     6744×10112 整幅插值成 float32 是 816 MB，纯浪费。
+     6744×10112 整幅插值成 float32 需 816 MB，纯属浪费。
   2. 别把大图丢给浏览器。光台用最长边 1600 px 的缩略预览，68 MP 那 34 MB PNG 只用于下载。
   3. 放大镜要的是「一小块真像素」，不是整幅位图。超过 4 MP 的图在任务结束时预切成
      1024² 的 PNG 瓦片，取块时只读命中的那几块，一次请求几十毫秒。
 
 这三条都只碰「怎么算、怎么传」，不碰输出本身：下载到的永远是模型原生分辨率的
-无损 PNG，跟没做这些优化之前一个像素都不差（app/qa/perf_probe.py 会当场验给你看）。
+无损 PNG，与未做这些优化之前逐像素一致（app/qa/perf_probe.py 会当场验证）。
 
-除了「输出多大、花了多久」，这里还老实算了三件事，界面上直接给人看：
+除「输出多大、耗时多久」之外，这里还额外计算了三项指标，并在界面上直接展示：
     rt_ssim / rt_psnr  放大结果缩回原尺寸后跟原图的相似度 —— 衡量有没有把内容改跑
     sharp_gain         结果与双三次基线的拉普拉斯方差之比 —— 衡量锐度真的涨了多少
     bicubic_bytes      同样尺寸下双三次的 PNG 体积 —— 细节换来的体积代价
@@ -1413,7 +1413,7 @@ def main():
     ap.add_argument("--keep", choices=("1", "0"), default=None,
                     help="覆盖设置：1 保存结果（默认），0 暂存")
     ap.add_argument("--open", dest="open_browser", action="store_true",
-                    help="起好之后顺手把浏览器打开（双击启动的脚本走这条）")
+                    help="启动完成后自动打开浏览器（双击启动的脚本使用此项）")
     a = ap.parse_args()
 
     global CFG
@@ -1428,7 +1428,7 @@ def main():
         tail = f"，其中 {st['leftover']} 次只有输入、没有结果" if st["leftover"] else ""
         print(f"整理输出：{st['runs']} 次工程收进各自文件夹（{st['files']} 个文件）{tail}")
     if st["failed"]:
-        print(f"整理输出：有 {st['failed']} 次没收干净，文件还留在原处，没动")
+        print(f"整理输出：有 {st['failed']} 次未能归并，文件仍保留在原处，未做改动")
 
     threading.Thread(target=worker, daemon=True).start()
     n = restore_jobs()
@@ -1440,28 +1440,28 @@ def main():
     try:
         srv = http.server.ThreadingHTTPServer((a.host, a.port), Handler)
     except OSError as e:
-        sys.exit(f"端口 {a.port} 起不来：{e}\n换个端口：python app/server/server.py --port 8766")
+        sys.exit(f"端口 {a.port} 无法启动：{e}\n请改用其他端口：python app/server/server.py --port 8766")
     srv.daemon_threads = True
 
     if busy:
-        print(f"  ！{a.port} 上已经有一个服务在跑了（多半是上一次那个窗口还开着）。")
-        print("     两个抢一个端口，请求只会跑到后起的那个 —— 想确认自己跑的是新代码，")
-        print("     就把旧窗口关掉再启动，或者换个端口。")
+        print(f"  ！端口 {a.port} 上已有一个服务在运行（通常是上次的窗口尚未关闭）。")
+        print("     两个进程竞争同一端口时，请求只会发往后启动的那个 —— 若需确认运行的是新代码，")
+        print("     请关闭旧窗口后重新启动，或改用其他端口。")
 
     base_url, lan_urls = _reachable_urls(a.host, a.port)
-    print(f"BigPixels 本地版已启动： {base_url}")
+    print(f"BigPixels 本地版已启动：{base_url}")
     if lan_urls:
-        print("  同一个 Wi-Fi 下也能开（手机、平板都行）： " + "  ".join(lan_urls))
-        print("  （默认绑在所有网卡上，同一个网络里的人都能打开；只想自己用就加 "
+        print("  同一局域网内亦可访问（手机、平板均可）： " + "  ".join(lan_urls))
+        print("  （默认绑定所有网卡，同一网络内的设备均可访问；仅本机使用时请加 "
               "--host 127.0.0.1）")
     print_model_report(model_report())
     print(f"工程目录 {WORK_DIR}"
           + (f"  ·  已有 {n} 次工程" if n else "")
           + (f"  ·  ?job=<id> 的链接还能用" if n else ""))
-    print(f"结果保存：{'保存模式 —— 出来的结果就留在上面那个文件夹里，不自动清理'
-                       if CFG['keep'] else '暂存模式 —— 服务一停就清空工程目录，记得先下载'}")
+    print(f"结果保存：{'保存模式 —— 结果保留在上述文件夹中，不自动清理'
+                       if CFG['keep'] else '暂存模式 —— 服务停止即清空工程目录，请及时下载'}")
     if not CFG["keep"]:
-        print(f"  （设置存在 {SETTINGS_PATH}，改回保存模式：运行后打开界面「更多设置」切一下）")
+        print(f"  （设置保存在 {SETTINGS_PATH}；如需改回保存模式，启动后打开界面「更多设置」切换）")
     print("按 Ctrl+C 停止")
 
     if a.open_browser:
@@ -1472,9 +1472,9 @@ def main():
         url = base_url
         try:
             webbrowser.open(url)
-            print(f"已经替你打开浏览器：{url}")
+            print(f"已自动打开浏览器：{url}")
         except Exception as e:
-            print(f"自动开浏览器没成功（{type(e).__name__}），手动打开 {url} 就行")
+            print(f"自动打开浏览器失败（{type(e).__name__}），请手动访问 {url}")
 
     try:
         srv.serve_forever()
@@ -1484,9 +1484,9 @@ def main():
         srv.server_close()
         if not CFG["keep"]:
             k = wipe_work()
-            print(f"\n暂存模式：清掉了 {k} 个工程文件夹")
+            print(f"\n暂存模式：已清除 {k} 个工程文件夹")
         else:
-            print(f"\n已停止 —— 结果都留在 {WORK_DIR}，没动")
+            print(f"\n已停止 —— 结果均保留在 {WORK_DIR}，未做改动")
 
 
 if __name__ == "__main__":

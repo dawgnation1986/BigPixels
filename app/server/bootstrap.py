@@ -109,7 +109,7 @@ NO_PAUSE = False
 def banner() -> None:
     print()
     print("  BigPixels 放大台 · 本地版")
-    print("  在你自己的机器上跑的 AI 无损放大；图片不出本机，也不上传任何地方。")
+    print("  在本机运行的 AI 无损放大；图片不会离开本机，也不会上传至任何位置。")
     print("  " + "-" * 62)
 
 
@@ -119,7 +119,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description="BigPixels 一键启动：环境 → 模型 → 网页服务",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="退出码：0 跑通了 / 1 中间某步没成 / 2 参数不对")
+        epilog="退出码：0 成功 / 1 中间步骤失败 / 2 参数错误")
     ap.add_argument("--port", type=int, default=8765, help="网页服务端口（默认 8765）")
     ap.add_argument("--venv", default=DEFAULT_VENV, help="虚拟环境目录（默认 .venv）")
     ap.add_argument("--source", choices=("mirror", "hf"), default="mirror",
@@ -127,7 +127,7 @@ def main() -> int:
     ap.add_argument("--check", action="store_true",
                     help="只自检环境和模型，不安装、不下载、不起服务")
     ap.add_argument("--no-open", action="store_true", help="起服务但不自动开浏览器")
-    ap.add_argument("--no-pause", action="store_true", help="出错也不停住等回车")
+    ap.add_argument("--no-pause", action="store_true", help="出错时不停留等待回车")
     a = ap.parse_args()
 
     NO_PAUSE = a.no_pause
@@ -147,20 +147,20 @@ def main() -> int:
     # .venv 还没建的时候手上只有系统 python，得用它去建。setup_env.py 自己会
     # 判断「建环境 / 补依赖 / 已经好了」，所以这里只要把解释器选对就行。
     have_venv = os.path.isfile(py)
-    step(1, "运行环境" + ("（第一次运行，先把虚拟环境和依赖备好）" if not have_venv else ""))
+    step(1, "运行环境" + ("（首次运行，先准备虚拟环境与依赖）" if not have_venv else ""))
     cmd = [py if have_venv else sys.executable, SETUP, "--venv", venv]
     if a.check:
         cmd.append("--check")
     rc = run(cmd)
     if rc:
-        print("\n  ！运行环境没备好 —— 上面那几行写着卡在哪一步。")
-        print("     Windows 大多是没装 Python 或装得不完整：到 python.org 装一个")
-        print("     3.9 以上（安装时勾上 \"Add python.exe to PATH\"），再双击一次。")
+        print("\n  ！运行环境未就绪 —— 具体失败步骤见上方输出。")
+        print("     Windows 上多为未安装 Python 或安装不完整：请到 python.org 安装")
+        print("     3.9 以上版本（安装时勾选 \"Add python.exe to PATH\"），然后重新双击启动。")
         hold()
         return 1
     py = venv_python(venv)
     if not os.path.isfile(py):
-        print(f"\n  ！环境看着建好了，却找不到 {py}")
+        print(f"\n  ！环境显示已建好，却找不到 {py}")
         hold()
         return 1
 
@@ -168,21 +168,21 @@ def main() -> int:
     step(2, "模型自检（15 个权重 · 约 292 MB · 缺什么下什么）")
     if run([py, MODELS, "--source", a.source]):
         # download_models.py 自己已经把「重跑续传 / 换源 / 手动放文件」说清了
-        print("\n  ！模型没下齐。缺的那几个在网页里用不了，但其余功能照常。")
-        print("     已经下好的不会再下，重跑一次就是断点续传。")
+        print("\n  ！模型未下载完整。缺失的模型在网页中不可用，其余功能不受影响。")
+        print("     已下载的文件不会重复下载，重新运行即从断点续传。")
         hold()
         return 1
 
     # ---------------------------------------------------------------- 3/3 服务
     if a.check:
         step(3, "网页服务")
-        print("        --check：跳过。上面两步都没问题，去掉 --check 就能起服务。\n")
+        print("        --check：已跳过。以上两步均无问题，去掉 --check 即可启动服务。\n")
         return 0
 
     url = f"http://127.0.0.1:{a.port}/"
     step(3, "起网页服务")
     print(f"        地址   {url}")
-    print("        停止   在这个窗口按 Ctrl+C，或者直接关掉这个窗口")
+    print("        停止   在本窗口按 Ctrl+C，或直接关闭本窗口")
     print()
 
     cmd = [py, SERVER, "--port", str(a.port)]
@@ -192,10 +192,10 @@ def main() -> int:
 
     print()
     if rc:
-        print(f"  ！服务退出了（退出码 {rc}）。")
-        print(f"     如果上面写着「端口 {a.port} 起不来」，那就是端口被占着 ——")
-        print("     多半是上一次那个窗口还开着。关掉它，或者换个端口：")
-        print(f"         python web\\bootstrap.py --port {a.port + 1}")
+        print(f"  ！服务已退出（退出码 {rc}）。")
+        print(f"     若上方提示「端口 {a.port} 无法启动」，说明该端口已被占用 ——")
+        print("     通常是上次的窗口仍在运行。请关闭它，或改用其他端口：")
+        print(f"         python app\\server\\bootstrap.py --port {a.port + 1}")
         hold()
         return 1
     print("  服务已停止。\n")
@@ -206,5 +206,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print("\n  手动打断了。已经下好的模型和装好的依赖都还在，重跑会接着来。\n")
+        print("\n  已手动中断。已下载的模型与已安装的依赖均保留，重新运行将从中断处继续。\n")
         sys.exit(0)

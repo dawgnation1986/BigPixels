@@ -6,7 +6,7 @@
     低分图 --（必要时先插值放大）--> 深度卷积网络预测修正 --> 高清大图
 
 权重换成开源版本，共两族：
-    waifu2x（CUnet / Swin-UNet）—— 就是线上那个 bigjpg 用的那一族，art/photo 双域 + noise0~3 四档降噪
+    waifu2x（CUnet / Swin-UNet）—— 与线上 bigjpg 同属一族，art/photo 双域 + noise0~3 四档降噪
     Real-ESRGAN x4plus / 4x-AnimeSharp —— 现代 GAN 系，照片与动漫线稿更强
 
 核心实现拆在 app/core/ 下，这里只管参数解析和进度显示：
@@ -18,7 +18,7 @@
 
 用法示例：
     python tools/upscale.py in.jpg -o out.png --preset art --denoise medium --scale 4
-    python tools/upscale.py in.jpg -o out.png --clear crisp        # 线条更硬，接近线上那种观感
+    python tools/upscale.py in.jpg -o out.png --clear crisp        # 线条更硬，接近线上观感
     python tools/upscale.py D:\\pics -o D:\\out --preset photo --scale 2
     python tools/upscale.py --list
     python tools/upscale.py --info
@@ -81,7 +81,7 @@ def _print_info():
                 print(f"  {sz/1048576:7.2f}MB  {f}")
         print(f"  合计 {tot/1048576:.1f}MB")
     else:
-        print("  （还没下载，运行 python tools/download_models.py）")
+        print("  （尚未下载，请运行 python tools/download_models.py）")
 
 
 def main(argv=None):
@@ -95,7 +95,7 @@ def main(argv=None):
                     help="清晰度（收尾锐化）：" + "/".join(CLEAR_LEVELS) + "，也可直接给增益数字")
     ap.add_argument("--bright", default="off",
                     help="明暗：" + "/".join(BRIGHT_LEVELS)
-                         + "。lift = 整体 ×1.019，换线上那种通透观感，代价是偏离原图一点；"
+                         + "。lift = 整体 ×1.019，换取线上那种通透观感，代价是略微偏离原图；"
                            "也可直接给乘数数字")
     ap.add_argument("--tile", type=int, default=256, help="瓦片边长（显存不够就调小）")
     ap.add_argument("--overlap", type=int, default=16, help="瓦片重叠像素")
@@ -131,7 +131,7 @@ def main(argv=None):
             f"{k}(×{v:g})" for k, v in CLEAR_LEVELS.items()))
         print("明暗档位：" + " / ".join(
             f"{k}(×{v:g})" for k, v in BRIGHT_LEVELS.items())
-            + " —— 默认原样最贴原图，lift 是线上那种通透感（会偏离原图一点）")
+            + " —— 默认原样最贴合原图，lift 为线上那种通透观感（会略微偏离原图）")
         return
     if args.info:
         _print_info()
@@ -152,7 +152,7 @@ def main(argv=None):
                                          _outname(os.path.basename(src), args.scale))
         targets = [(src, out)]
     if not targets:
-        raise SystemExit("没找到可处理的图片")
+        raise SystemExit("未找到可处理的图片")
 
     path = resolve_model(args.preset, args.denoise, args.scale)
     runner = SRRunner(path, device=args.device, tile=args.tile, overlap=args.overlap)

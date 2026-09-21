@@ -34,7 +34,7 @@ from .paths import MODEL_DIR
 PRESETS: dict[str, dict] = {
     "anime": {
         "label": "动漫插画",
-        "desc": "彩色二次元插画 / 原画 —— 细节保留最多、线条最硬，走 GPU 还最快",
+        "desc": "彩色二次元插画 / 原画 —— 细节保留最多、线条最锐利，且在 GPU 上速度最快",
         "tech": "4x-AnimeSharp · 原生 4× · 68 MB · 单权重，无降噪档",
         "noise": {0: "4x-AnimeSharp.onnx"},
         "dn_only": None,
@@ -49,7 +49,7 @@ PRESETS: dict[str, dict] = {
     },
     "art": {
         "label": "卡通 / 插画（轻量）",
-        "desc": "waifu2x 老模型，结果偏「软」偏保守；只能 CPU 跑，反而比上一档慢",
+        "desc": "waifu2x 早期模型，输出偏「软」偏保守；仅支持 CPU，速度反而慢于上一档",
         "tech": "waifu2x CUnet · 原生 2× · 4.9 MB/档 · 带四档降噪权重",
         "noise": {
             0: "waifu2x_cunet_art_noise0_2x.onnx",
@@ -63,7 +63,7 @@ PRESETS: dict[str, dict] = {
     },
     "art-hd": {
         "label": "插画 高清",
-        "desc": "waifu2x Swin 版，比「轻量」干净一点，同样是 2× 串联",
+        "desc": "waifu2x Swin 版，比「轻量」更干净，同样为 2× 串联",
         "tech": "waifu2x Swin-UNet · 原生 2× · 16 MB/档 · 带四档降噪权重",
         "noise": {
             0: "waifu2x_swin_art_noise0_2x.onnx",
@@ -77,7 +77,7 @@ PRESETS: dict[str, dict] = {
     },
     "esrgan": {
         "label": "通用场景",
-        "desc": "照片和插画都行，最不容易出错；细节不如「动漫插画」",
+        "desc": "照片与插画皆可，容错性最好；细节不及「动漫插画」",
         "tech": "Real-ESRGAN x4plus · 原生 4× · 68 MB · 单权重，无降噪档",
         "noise": {0: "RealESRGAN_x4plus.onnx"},
         "dn_only": None,
@@ -128,9 +128,9 @@ def resolve_model(preset: str, denoise: str, scale: int = 2) -> str:
         if not p.get("dn_only"):
             raise SystemExit(f"预设 '{preset}' 没有 1x 权重，无法只降噪")
         raise SystemExit(
-            "1x「只降噪」这一档用不了：上游的 scale1x.onnx 是个 1542 字节的占位文件，"
-            "不是真模型（见 README「已知问题」）。\n"
-            "  要降噪就放大到 2x 及以上，用 --denoise 选降噪档 —— 那几档是好的。")
+            "1x「只降噪」这一档不可用：上游的 scale1x.onnx 是 1542 字节的占位文件，"
+            "并非真实模型（见 README「已知问题」）。\n"
+            "  如需降噪，请放大到 2x 及以上，并用 --denoise 选择降噪档 —— 那几档是正常的。")
     idx = DENOISE_LEVELS.get(denoise)
     if idx is None:
         raise SystemExit(f"未知降噪档 '{denoise}'，可选：{', '.join(DENOISE_LEVELS)}")

@@ -81,7 +81,7 @@ const dnLabel = id => {
 /* ---------------------------------------------------------- 反馈 */
 function fail(msg, detail) {
   const el = $("#err");
-  el.innerHTML = "<strong>没做成</strong><span>" + msg + "</span>" +
+  el.innerHTML = "<strong>操作未完成</strong><span>" + msg + "</span>" +
                  (detail ? "<code>" + detail + "</code>" : "");
   el.hidden = false;
   $("#prog").hidden = true;
@@ -184,7 +184,7 @@ mirrorGo();
 /* 动作栏左边那半条仪表：抽屉收起来之后，用户得一眼知道
    「选没选图、现在是什么参数」。参数一变就从下面那几个渲染函数过来。 */
 function syncBarSummary() {
-  $("#barName").textContent = S.src ? S.src.name : "还没选图";
+  $("#barName").textContent = S.src ? S.src.name : "尚未选择图片";
   const bits = [];
   const p = ((S.cfg && S.cfg.presets) || []).find(x => x.id === S.sel.preset);
   if (p) bits.push(p.label);
@@ -230,12 +230,12 @@ function renderEngine(c) {
   const dmlOk = dev.includes("dml");
   $("#engine").innerHTML = '<span class="chip"><i class="dot' + (dmlOk ? "" : " warn") +
     '"></i>在本机 <b>' + (dmlOk ? "GPU + CPU" : "CPU") + " 上推理</b></span>";
-  $("#tileNote").textContent = "显存或内存吃紧就调小。块与块之间重叠 " + c.overlap + " px 用来消除接缝。";
+  $("#tileNote").textContent = "显存或内存吃紧时调小。块与块之间重叠 " + c.overlap + " px，用于消除接缝。";
   $("#engineNote").textContent =
     (hasDml
-      ? "这台机器有 DirectML，但 waifu2x 系权重在它上面会算出错误结果，程序在装载时会做一次 GPU/CPU 数值比对，" +
-        "不一致就自动退回 CPU；Real-ESRGAN 与 AnimeSharp 留在 GPU 上跑。"
-      : "这台机器上没有 DirectML，全部走 CPU。") +
+      ? "本机具备 DirectML，但 waifu2x 系权重在其上会算出错误结果，程序在装载时会进行一次 GPU/CPU 数值比对，" +
+        "不一致则自动退回 CPU；Real-ESRGAN 与 AnimeSharp 留在 GPU 上运行。"
+      : "本机没有 DirectML，全部由 CPU 执行。") +
     " 可用 provider：" + c.providers.join(" / ") + " · CPU " + c.cpus + " 核。";
 }
 
@@ -251,11 +251,11 @@ function renderModelWarn(c) {
   }
   const ready = c.presets.filter(p => p.ready).length;
   box.hidden = false;
-  box.innerHTML = "<strong>模型文件不全，只有 " + ready + " / " + c.presets.length +
-    " 档能用</strong><span>缺这 " + m.missing.length + " 个权重（在 " + esc(m.dir) + "）：</span>" +
+  box.innerHTML = "<strong>模型文件不全，仅 " + ready + " / " + c.presets.length +
+    " 档可用</strong><span>缺少以下 " + m.missing.length + " 个权重（位于 " + esc(m.dir) + "）：</span>" +
     "<code>" + m.missing.map(esc).join("<br>") + "</code>" +
-    "<span>在项目目录里跑这个把它们拉下来 ——</span><code>" + esc(m.hint) + "</code>" +
-    "<span>走的是 hf-mirror 镜像；速度很慢或者连不上，就先开代理再跑一次。</span>";
+    "<span>在项目目录下运行以下命令即可下载：</span><code>" + esc(m.hint) + "</code>" +
+    "<span>下载走 hf-mirror 镜像；速度过慢或无法连接时，请先配置代理再重试。</span>";
 }
 
 /* ---------------------------------------------------------- 保存 / 暂存 */
@@ -271,17 +271,17 @@ function renderKeep(keep) {
 function paintKeep() {
   const k = S.keep, work = (S.cfg && S.cfg.work_rel) || "outputs/web/";
   $("#keepNote").textContent = k
-    ? "结果存进 " + work + "<时间戳>_<图名>_<任务号>/ ，服务不做任何自动清理。"
-    : "结果只算暂存：服务一停就清空整个工程目录，界面上也不会替你留 —— 出图后记得先下载。";
+    ? "结果存入 " + work + "<时间戳>_<图名>_<任务号>/，服务不执行任何自动清理。"
+    : "结果仅暂存：服务停止即清空整个工程目录，界面上也不会保留副本，出图后请及时下载。";
   const d = (S.cfg && S.cfg.disk) || {};
   const used = (d.used || 0) / 1048576;
   const n = d.jobs || 0, cap = 16;
   $("#diskNote").textContent = k
     ? "现在已占 " + (used < 1024 ? used.toFixed(0) + " MB" : (used / 1024).toFixed(2) + " GB") +
-      " / " + n + " 次工程，不清理。攒多了自己去那个目录删文件夹就行。"
+      " / " + n + " 次工程，不清理。累积过多时请自行删除该目录下的文件夹。"
     : "暂存模式最多留 " + fmtBytes((S.cfg && S.cfg.limits && S.cfg.limits.disk_temp) || 1572864000) +
-      " 或 " + cap + " 次，超了按时间从最早的开始清。" +
-      (n > cap ? " 现在就有 " + n + " 次 —— 下一次出图会先把最早的 " + (n - cap) + " 次清掉。" : "");
+      " 或 " + cap + " 次，超出后按时间从最早的开始清理。" +
+      (n > cap ? " 当前已有 " + n + " 次，下一次出图将先清除最早的 " + (n - cap) + " 次。" : "");
 }
 async function setKeep(keep) {
   try {
@@ -292,7 +292,7 @@ async function setKeep(keep) {
     paintKeep();
     if (S.result) showSaveNote(S.result);
   } catch (e) {
-    fail("设置没改成。", String(e.message || e));
+    fail("设置修改失败。", String(e.message || e));
   }
 }
 const esc = s => String(s == null ? "" : s)
@@ -309,14 +309,14 @@ function showSaveNote(j) {
   if (j.keep === false || !S.keep) {
     box.className = "notice";
     box.hidden = false;
-    box.innerHTML = "<b>暂存模式：这份结果不会留盘。</b>服务一停，" + esc(path) +
-      " 里的工程文件夹就一起清掉了 —— 现在按右边的「下载」存一份到自己想放的地方。";
+    box.innerHTML = "<b>暂存模式：本结果不会保留在磁盘上。</b>服务一旦停止，" + esc(path) +
+      " 下的工程文件夹将一并清除，请立即点击右侧「下载」保存到目标位置。";
   } else {
     box.className = "notice ok";
     box.hidden = false;
     box.innerHTML = "结果已经存进 <b>" + esc(path) + "</b>" +
       (folder ? "<code>" + esc(folder) + "/</code>" : "") +
-      "，不会被自动清理。要留档建议还是下载一份拿走。";
+      "，不会被自动清理。如需存档，建议另行下载一份。";
   }
 }
 
@@ -349,8 +349,8 @@ function setSource(src) {
   S.pending = null;
   S.tok++;
   $("#stageNote").textContent = T(
-    "结果出来后，把鼠标放到图上，下面的放大镜会跟上。",
-    "结果出来后，点一下图上看哪儿，下面的放大镜就跟到那一块。");
+    "结果生成后，将鼠标移到图上，下方放大镜将跟随该位置。",
+    "结果生成后，点一下图上想看的位置，下方放大镜会跟随到该区域。");
   clearErr();
   $("#go").disabled = false;
   $("#go").textContent = "开始放大";
@@ -385,12 +385,12 @@ function dropSource() {
 function acceptFile(f) {
   if (!f) return;
   if (!/^image\//.test(f.type || "")) {
-    return fail("这不是图片文件。", "选 PNG / JPG / WEBP / TIFF，或者把图片文件拖进来。");
+    return fail("这不是图片文件。", "请选择 PNG / JPG / WEBP / TIFF，或将图片文件拖入。");
   }
   const cap = (S.cfg && S.cfg.limits.max_upload) || 41943040;
   if (f.size > cap) {
-    return fail("图片太大，超过单张上限。",
-                "上限 " + fmtBytes(cap) + "，当前 " + fmtBytes(f.size) + "。先裁小或压缩一下再试。");
+    return fail("图片过大，超出单张上限。",
+                "上限 " + fmtBytes(cap) + "，当前 " + fmtBytes(f.size) + "。请先裁剪或压缩后重试。");
   }
   const url = URL.createObjectURL(f);
   const im = new Image();
@@ -398,7 +398,7 @@ function acceptFile(f) {
                                blob: f, bytes: f.size, revoke: true});
   im.onerror = () => {
     URL.revokeObjectURL(url);
-    fail("这个文件解不开。", "可能后缀和内容不符，或编码方式不支持。换成 PNG / JPG 再试。");
+    fail("该文件无法解码。", "可能扩展名与内容不符，或编码方式不受支持。请改用 PNG / JPG 重试。");
   };
   im.src = url;
 }
@@ -441,7 +441,7 @@ function renderSamples(c) {
         const blob = await r.blob();
         setSource({url: s.url, name: s.id + ".png", w: s.w, h: s.h, blob, bytes: blob.size});
       } catch (err) {
-        fail("取不到示例图。", String(err.message || err));
+        fail("无法获取示例图。", String(err.message || err));
       }
     };
     row.appendChild(b);
@@ -479,7 +479,7 @@ function applyPresetRules() {
   });
   $("#denoiseNote").hidden = has;
   $("#denoiseNote").textContent = has ? "" :
-    "Real-ESRGAN 与 AnimeSharp 各自只有一份权重、不带降噪档，这一项对它们不起作用。";
+    "Real-ESRGAN 与 AnimeSharp 各自只有一份权重、不含降噪档，本项对它们不生效。";
   syncBarSummary();
 }
 
@@ -620,7 +620,7 @@ function updateReadout() {
   const out = $("#readout"), warn = $("#sizeWarn");
   syncBarSummary();
   if (!S.src) {
-    out.innerHTML = "<span>载入图片后这里会算出输出尺寸</span>";
+    out.innerHTML = "<span>载入图片后这里将显示输出尺寸</span>";
     warn.hidden = true;
     return;
   }
@@ -631,12 +631,12 @@ function updateReadout() {
     "<span>·</span><span>" + mp(S.src.w, S.src.h).toFixed(2) + " → " + m.toFixed(1) + " MP</span>";
   if (m >= OUT_MP_STOP) {
     warn.hidden = false;
-    warn.innerHTML = "输出会到 <b>" + m.toFixed(0) + " MP</b>（" + w.toLocaleString("zh-CN") + " × " +
-      h.toLocaleString("zh-CN") + "），这台机器跑不动。换小一点的倍率，或者先把原图裁小 —— 上限 " +
+    warn.innerHTML = "输出将达到 <b>" + m.toFixed(0) + " MP</b>（" + w.toLocaleString("zh-CN") + " × " +
+      h.toLocaleString("zh-CN") + "），本机无法处理。请改用更小的倍率，或先裁剪原图 —— 上限 " +
       OUT_MP_STOP + " MP。";
   } else if (m >= OUT_MP_WARN) {
     warn.hidden = false;
-    warn.innerHTML = "输出 " + m.toFixed(0) + " MP 偏大，内存和时间都要多花不少。";
+    warn.innerHTML = "输出 " + m.toFixed(0) + " MP 偏大，内存与耗时都会明显增加。";
   } else {
     warn.hidden = true;
   }
@@ -647,7 +647,7 @@ function updateReadout() {
 async function sourceBlob() {
   if (S.src.blob) return S.src.blob;
   const r = await fetch(S.src.url);
-  if (!r.ok) throw new Error("读不到源文件（HTTP " + r.status + "）");
+  if (!r.ok) throw new Error("无法读取源文件（HTTP " + r.status + "）");
   return await r.blob();
 }
 
@@ -689,7 +689,7 @@ async function start() {
   $("#saveNote").hidden = true;
   $("#prog").hidden = false;
   $("#overlay").hidden = false;
-  setProg(0, "正在把图交给引擎", "");
+  setProg(0, "正在提交给推理引擎", "");
   $("#live").textContent = "开始处理";
 
   try {
@@ -707,7 +707,7 @@ async function start() {
     poll();
   } catch (e) {
     S.busy = false;
-    fail("任务没能提交上去。", String(e.message || e));
+    fail("任务提交失败。", String(e.message || e));
   }
 }
 $("#go").onclick = start;
@@ -720,10 +720,10 @@ async function poll() {
     if (j.state === "error") {
       clearInterval(S.timer);
       S.busy = false;
-      return fail("引擎报错了。", j.msg || "");
+      return fail("推理引擎报错。", j.msg || "");
     }
     if (j.passes) markPasses(j.passes);
-    const info = [j.model, j.device, j.passes > 1 ? "串联 " + j.passes + " 趟" : null]
+    const info = [j.model, j.device, j.passes > 1 ? "串联 " + j.passes + " 次" : null]
       .filter(Boolean).join("  ·  ");
     setProg(j.progress, j.stage, info);
     $("#progTime").textContent = (j.elapsed || 0).toFixed(1) + " s";
@@ -737,7 +737,7 @@ async function poll() {
   } catch (e) {
     clearInterval(S.timer);
     S.busy = false;
-    fail("查任务状态时断了。", String(e.message || e));
+    fail("查询任务状态失败。", String(e.message || e));
   }
 }
 
@@ -772,7 +772,7 @@ function showResult(j) {
   $("#dlText").textContent = "下载 " + j.out_w + "×" + j.out_h + " PNG";
 
   $("#stageNote").textContent =
-    "拖竖线分开对比，想放大看就按「全屏对比」。光台上是缩略预览，像素级对照看下面的放大镜。";
+    "拖动分割线对比；需要放大查看请按「全屏对比」。光台上为缩略预览，像素级对照请见下方放大镜。";
   $("#loupe").hidden = false;
   $("#ledgerWrap").hidden = false;
   $("#fs").setAttribute("aria-disabled", "false");
@@ -809,8 +809,8 @@ function prepareLoupe(j, base) {
   $("#capAi").textContent = j.out_w + "×" + j.out_h;
   $("#bicNote").hidden = j.has_baseline;
   $("#bicNote").textContent = j.has_baseline ? "" :
-    "中间这一格是当场算的 —— 只算你要看的这一小块，所以输出再大也有得比。" +
-    "整幅双三次 PNG 落盘代价太大，这次没存，计量表里「体积」那一行就留空了。";
+    "中间这一格为实时计算，只计算当前查看的小块，因此输出再大也可对照。" +
+    "整幅双三次 PNG 落盘开销过大，本次未保存，计量表中「体积」一行留空。";
   updateLoupe();
 }
 
@@ -948,11 +948,11 @@ function updateLoupe() {
      换来的 21 px 就是「光台和放大镜同屏」里的一份。改文案记得两边一起看。 */
   let head, tail = " 这块 " + size + "。";
   if (g.z > 1) {
-    head = "一格 = 输出一像素 × " + round2(g.z) + "，看的是「AI 放大」的样子，不是它的真实像素。";
+    head = "一格 = 输出一像素 × " + round2(g.z) + "，显示的是「AI 放大」的观感，而非其真实像素。";
   } else if (g.z === 1) {
-    head = "一格正好是一个输出像素（1:1）：多出来的细节是补的还是原来就有的，一比就清楚。";
+    head = "一格恰好对应一个输出像素（1:1）：多出的细节是模型补出的还是原本就有，一比即可分辨。";
   } else {
-    head = "把 " + size + " 压进一格（约 1:" + Math.round(1 / g.z) + "），看整块结构；要抠像素按「1:1」。";
+    head = "将 " + size + " 压入一格（约 1:" + Math.round(1 / g.z) + "），用于观察整体结构；需要查看单个像素请按「1:1」。";
     tail = "";
   }
   $("#zoomNote").textContent = "三格同块同尺寸。" + head + tail;
@@ -1084,7 +1084,7 @@ $("#fs").onclick = () => {
     if (document.fullscreenElement) document.exitFullscreen();
     else if (STAGE.requestFullscreen) STAGE.requestFullscreen();
   } catch (e) {
-    fail("这台浏览器不给全屏。", "可以直接把窗口拉大，或者用 F 键再试一次。");
+    fail("本浏览器不支持全屏。", "可直接放大窗口，或按 F 键重试。");
   }
 };
 document.addEventListener("fullscreenchange", refreshFs);
@@ -1130,19 +1130,19 @@ function renderLedger(j) {
         U(j.mp != null ? " · " + j.mp.toFixed(2) + " MP · " + fmtBytes(j.out_bytes) : "")) +
     row("倍率", (j.scale != null ? "×" + j.scale : "—") + U(" · 实测 ×" + num(j.scale_actual, v => v)),
         j.passes > 1
-          ? "网络原生 ×" + j.net_scale + "，所以串了 " + j.passes + " 趟；差最后那一点用 Lanczos 补齐到正好 ×" + j.scale + "。"
-          : (j.passes === 1 ? "一趟网络就直接到位，没有额外插值。" : ""));
+          ? "网络原生 ×" + j.net_scale + "，因此串联 " + j.passes + " 次；不足的部分由 Lanczos 补齐至 ×" + j.scale + "。"
+          : (j.passes === 1 ? "一次网络推理即达到目标倍率，无额外插值。" : ""));
 
   const run =
     row("模型", (j.preset_label || "—") + U(" · 降噪 " + (j.denoise ? dnLabel(j.denoise) : "—"))) +
     row("清晰度", clearLabel(j.clear || "normal") +
         U(j.sharp_amount ? " · 收尾锐化 半径 " + j.sharp_radius + " px / 增益 " + j.sharp_amount : ""),
-        j.sharp_amount ? "网络出来的边是渐变过渡，这一步只把边缘收回来；平坦区不动，所以不会磨出噪点。" : "这一档没做任何锐化，输出就是网络的原始结果。") +
+        j.sharp_amount ? "网络输出的边缘为渐变过渡，本步仅将边缘收回；平坦区不变，因此不会磨出噪点。" : "本档未做任何锐化，输出即网络的原始结果。") +
     row("明暗", brightLabel(j.bright || "off") +
         U(j.bright_factor && j.bright_factor !== 1 ? " · 整体 ×" + j.bright_factor : ""),
         j.bright_factor && j.bright_factor !== 1
-          ? "这一步会让输出比原图亮一点 —— 换的是线上那种通透观感，不是更还原。想最贴原图就切回「原样」。"
-          : "没动明暗，输出跟原图一个亮度。") +
+          ? "本步会使输出比原图略亮，换来的是线上那种通透观感，并非更接近原图。要求最贴近原图时请切回「原样」。"
+          : "未调整明暗，输出与原图亮度一致。") +
     row("后端", (j.device || "—") + U(" · 分块 " + num(j.tile, v => v) + " px")) +
     row("权重", String(j.model || "").replace(/\.onnx$/, "") || "—", null, true);
 
@@ -1150,12 +1150,12 @@ function renderLedger(j) {
     row("总耗时", num(j.elapsed, v => v.toFixed(1)) + U(" s")) +
     row("其中推理", num(j.t_net, v => v.toFixed(1)) + U(" s")) +
     row("吞吐", num(j.mps, v => v.toFixed(2)) + U(" MP/s"),
-        j.mps != null ? "输出像素除以纯推理时间。这一台是 " + j.device + "，所以这个数是它的真实速度。" : "");
+        j.mps != null ? "输出像素数除以纯推理时间。本机为 " + j.device + "，因此该数值即其真实速度。" : "");
 
   const quality =
     row("回环一致", num(j.rt_ssim, v => "SSIM " + v) +
         U(j.rt_psnr != null ? " · PSNR " + j.rt_psnr + " dB" : ""),
-        j.rt_ssim != null ? "把结果缩回原尺寸再跟原图比。越接近 1，说明内容越没被改跑；掉得厉害就是模型在编东西。" : "") +
+        j.rt_ssim != null ? "将结果缩回原尺寸后与原图比较。越接近 1 表示内容被改动越少；数值明显下降则说明模型在凭空生成内容。" : "") +
     row("锐度增益", (j.sharp_gain == null ? "—" : "×" + j.sharp_gain) + U(" · 对照双三次"),
         j.sharp_gain != null
           ? "同一块 512×512 区域内拉普拉斯响应方差之比。原图 " + num(j.sharp_out, v => v) +
@@ -1164,16 +1164,16 @@ function renderLedger(j) {
     row("体积", fmtBytes(j.out_bytes) +
         U(j.bicubic_bytes != null ? " · 双三次 " + fmtBytes(j.bicubic_bytes) : " · 双三次没算"),
         j.bicubic_bytes != null
-          ? "同为 PNG 无损编码。多出来的那些体积，就是模型补出来的细节和它带出来的噪声。"
+          ? "同为 PNG 无损编码。多出的体积即模型补出的细节及其带出的噪声。"
           : (j.mp != null
-              ? "输出 " + j.mp.toFixed(0) + " MP，整幅双三次 PNG 得现编码一遍才知道体积，代价太大就跳过了 ——" +
-                "放大镜中间那格是当场按需算的，跟这个无关，照看。"
+              ? "输出 " + j.mp.toFixed(0) + " MP，整幅双三次 PNG 需现编码一次才能得到体积，开销过大故跳过。" +
+                "放大镜中间那一格为按需实时计算，与此无关，可正常查看。"
               : ""));
 
   // 整理输出目录时捡回来的旧结果没有日志，上面那些「—」得先解释一句，不然像坏了
   const head = j.recovered
-    ? '<p class="hint" style="padding-block-end:10px">这是整理输出目录时捡回来的旧结果 —— ' +
-      "当年的日志没留下，耗时与锐度这类指标无从补算，就显示「—」；尺寸、体积是从文件本身读出来的。</p>"
+    ? '<p class="hint" style="padding-block-end:10px">这是整理输出目录时恢复的旧结果 —— ' +
+      "当时的日志未保留，耗时与锐度等指标无法补算，因此显示「—」；尺寸、体积由文件本身读出。</p>"
     : "";
   $("#ledger").innerHTML = head + group("尺寸", size) + group("运行", run) +
                            group("时间", time) + group("质量", quality);
@@ -1241,7 +1241,7 @@ function restoreJob(id) {
       }
     })
     .catch(e => {
-      $("#engine").innerHTML = '<span class="chip"><i class="dot warn"></i>引擎没应答</span>';
-      fail("连不上本地服务。", "确认 web/server.py 还在跑，然后刷新这一页。" + String(e.message || e));
+      $("#engine").innerHTML = '<span class="chip"><i class="dot warn"></i>引擎无响应</span>';
+      fail("无法连接本地服务。", "请确认 app/server/server.py 仍在运行，然后刷新本页。" + String(e.message || e));
     });
 })();

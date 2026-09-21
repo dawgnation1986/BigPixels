@@ -123,17 +123,17 @@ def main() -> int:
         print(f"  建虚拟环境（用 {sys.version.split()[0]} 建）… 只做这一次")
         if run([sys.executable, "-m", "venv", venv]):
             print()
-            print("  ！建虚拟环境失败。常见就两种原因：")
-            print("     · Windows：Python 装得不完整 —— 到 python.org 重装一个 3.9 以上")
-            print("     · Linux：少装了 venv 那一包 —— sudo apt install python3-venv")
+            print("  ！创建虚拟环境失败。常见原因有两种：")
+            print("     · Windows：Python 安装不完整 —— 请到 python.org 安装 3.9 以上版本")
+            print("     · Linux：缺少 venv 组件 —— 执行 sudo apt install python3-venv")
             return 1
         if not os.path.isfile(py):
-            print(f"  ！建完了却找不到 {py}，这个 Python 的 venv 模块可能有问题")
+            print(f"  ！创建完成却找不到 {py}，该 Python 的 venv 模块可能有问题")
             return 1
-        print("  虚拟环境好了")
+        print("  虚拟环境已就绪")
 
     if a.no_deps:
-        print("\n  --no-deps：只建环境，不装依赖（想装就去掉这个参数）\n")
+        print("\n  --no-deps：仅创建环境，不安装依赖（需要安装时请去掉此参数）\n")
         return 0
 
     # ---------------------------------------------------------------- 装依赖
@@ -142,26 +142,26 @@ def main() -> int:
         print(f"  ！找不到依赖清单 {req}")
         return 2
     print()
-    print(f"  装依赖（{os.path.basename(req)}）—— 几百 MB，第一次要等一会儿")
-    print("  说明：Windows 装的是 onnxruntime-directml（直接吃显卡）")
-    print("        其它系统装的是 onnxruntime（CPU）。想用 CUDA 见 README。")
+    print(f"  安装依赖（{os.path.basename(req)}）—— 约数百 MB，首次安装需要等待一段时间")
+    print("  说明：Windows 安装 onnxruntime-directml（可直接调用显卡）")
+    print("        其它系统安装 onnxruntime（CPU）。使用 CUDA 的方法见 README。")
     print()
     run([py, "-m", "pip", "install", "--upgrade", "pip"], quiet=True)
     if run([py, "-m", "pip", "install", "-r", req]):
         print()
-        print("        默认源没装成，换清华的镜像再试一遍…")
+        print("        默认源安装失败，改用清华镜像重试…")
         if run([py, "-m", "pip", "install", "-r", req, "-i", MIRROR]):
             print()
-            print("  ！依赖没装上。常见就两种原因：")
-            print("     · 网络不通 —— 挂上代理再来一次")
-            print("     · 装到一半断了 —— 直接重跑启动脚本，pip 会接着装")
+            print("  ！依赖安装失败。常见原因有两种：")
+            print("     · 网络不通 —— 配置代理后重试")
+            print("     · 安装中断 —— 直接重新运行启动脚本，pip 会继续安装")
             return 1
 
     # ---------------------------------------------------------------- 收尾复核
     ok, info = probe(py)
     if not ok:
-        print(f"\n  ！装完了却还是 import 不了：{info}")
-        print("     多半是装错了后端 —— 看看 requirements.txt 里那两行平台标记。")
+        print(f"\n  ！安装完成却仍无法 import：{info}")
+        print("     通常是后端安装有误 —— 请检查 requirements.txt 中那两行平台标记。")
         return 1
     print("\n  好了：")
     for line in info.splitlines():

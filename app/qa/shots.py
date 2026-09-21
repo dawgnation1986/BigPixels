@@ -144,7 +144,7 @@ CHECK = r"""
   return {
     engine: t('#engine').slice(0, 34),
     presets: kids('#presets'), scales: kids('#scales'), denoise: kids('#denoise'),
-    /* 清晰度三档必须真的画在「5 线条要多清楚」那个分组里。踩过一次：单选框的 id
+    /* 清晰度三档必须真的画在「5 线条清晰度」那个分组里。踩过一次：单选框的 id
        取了 #clear，跟源图卡片上「移除」那个按钮撞名 —— radioGroup 按 id 找容器，
        找到的是那个按钮，整组控件就被渲染进卡片里，控制台里那一栏空空如也，
        页面上一个错都不报。所以这里不只看「有几档」，还要看它落在哪个分组里；
@@ -349,7 +349,7 @@ def report_check(c: dict, mobile: bool = False):
         bad.append("页面上有重复 id：" + "、".join("#" + x for x in c["dupIds"]))
     cg = c.get("clarityGrp")
     if not cg or cg.get("kids") != 3 or not cg.get("own"):
-        bad.append(f"清晰度控件没画进「线条要多清楚」那一组（{cg}）")
+        bad.append(f"清晰度控件没画进「线条清晰度」那一组（{cg}）")
     bg = c.get("brightGrp")
     if not bg or bg.get("kids") != 2 or not bg.get("own"):
         bad.append(f"明暗开关没画进「明暗」那一组（{bg}）")
