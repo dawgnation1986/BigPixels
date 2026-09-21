@@ -45,8 +45,8 @@
       <div class="grp reveal" style="--d:.04s">
         <div class="eyebrow"><span>1 选图</span><i></i></div>
         <div class="drop" id="drop" role="button" tabindex="0" aria-label="选择图片，或者把图片拖到这里">
-          <strong>拖入图片</strong>
-          <small>或点这里选文件 · PNG / JPG / WEBP / TIFF · 单张不超过 40 MB</small>
+          <strong data-touch="点这里选图">拖入图片</strong>
+          <small data-touch="PNG / JPG / WEBP / TIFF · 单张不超过 40 MB">或点这里选文件 · PNG / JPG / WEBP / TIFF · 单张不超过 40 MB</small>
         </div>
         <input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff" hidden>
         <div class="loaded" id="loaded" hidden>
@@ -83,6 +83,13 @@
         <div class="seg" id="denoise" data-kind="opt" role="radiogroup" aria-label="降噪程度"></div>
         <p class="hint">图上有噪点、颗粒、JPEG 杂色就往上调；本来就干净就选「关」。</p>
         <p class="hint" id="denoiseNote" hidden></p>
+      </div>
+
+      <div class="grp reveal" id="clarityGrp" style="--d:.18s">
+        <div class="eyebrow"><span>5 线条要多清楚</span><i></i></div>
+        <div class="seg" id="clarity" data-kind="opt" role="radiogroup" aria-label="清晰度"></div>
+        <p class="hint">网络出来的边是渐变过渡，细线放大后会发灰。这一档把边缘收回来；
+          想要线上那种硬线条就选「更锐」。</p>
       </div>
 
       <div class="grp reveal" style="--d:.2s">
@@ -148,7 +155,7 @@
 
           <div class="empty-state" id="emptyState">
             <div class="fig">— × —</div>
-            <p>还没有载入图片。用<b>第 1 步</b>选一张、或直接拖进来，结果会和原图叠在同一块光台上，拖中间那根竖线就能来回比。</p>
+            <p data-touch="还没有载入图片。点上面的第 1 步选一张，结果会和原图叠在同一块光台上，拖中间那根竖线就能来回比。">还没有载入图片。用<b>第 1 步</b>选一张、或直接拖进来，结果会和原图叠在同一块光台上，拖中间那根竖线就能来回比。</p>
           </div>
 
           <span class="corner l" id="cornerL" hidden></span>
@@ -166,7 +173,7 @@
             <div class="scan"></div>
           </div>
         </div>
-        <span class="fsHint">拖竖线对比 · ← → 微调 · Esc 退出全屏 · 右侧跟着鼠标看细节</span>
+        <span class="fsHint" data-touch="拖竖线对比 · 点画面换区域">拖竖线对比 · ← → 微调 · Esc 退出全屏 · 右侧跟着鼠标看细节</span>
       </div>
 
       <div class="toolbar reveal" style="--d:.14s">
@@ -195,6 +202,10 @@
             <div class="eyebrow"><span>放大镜</span><i></i></div>
             <div class="seg" id="zoom" role="radiogroup"
                  aria-label="放大镜倍率：屏幕像素比输出像素"></div>
+            <!-- 只在全屏里露面（CSS 靠 .stagebox:fullscreen 卡）。
+                 原因：全屏元素是 .stagebox，而「全屏对比」那颗键在它外面的工具栏里，
+                 一进全屏就看不见了 —— 桌面上有 Esc 兜着，手机上没有键盘就等于退不出来。 -->
+            <button class="fsExit" id="fsExit" type="button">退出全屏</button>
           </div>
           <!-- 滑块和上面那排档位是同一件事的两个入口：滑块随便调，档位一键跳。
                拖了滑块就没有哪个档位亮着 —— 那是正常的，不是坏了。 -->
@@ -235,7 +246,7 @@
       </div>
 
       <details class="adv reveal" id="ledgerWrap" style="--d:.22s" hidden>
-        <summary>这次改了什么 · 把鼠标移到图上看细节</summary>
+        <summary data-touch="这次改了什么 · 点图上看细节">这次改了什么 · 把鼠标移到图上看细节</summary>
         <div class="body">
           <div class="eyebrow"><span>计量表</span><i></i><em id="jobId"></em></div>
           <div id="ledger"></div>

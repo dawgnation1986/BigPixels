@@ -16,6 +16,7 @@ out = scale * in + b，并据此决定外扩与裁切量，不写死任何魔数
 
 用法示例：
     python upscale.py in.jpg -o out.png --preset art --denoise medium --scale 4
+    python upscale.py in.jpg -o out.png --clear crisp        # 线条更硬，接近线上那种观感
     python upscale.py D:\\pics -o D:\\out --preset photo --scale 2
     python upscale.py --list
     python upscale.py --info
@@ -58,6 +59,14 @@ def _is_nhwc(shape) -> bool:
 # --------------------------------------------------------------------------- #
 # noise: 降噪程度档位。无/低/中/高/最高 -> 0/1/2/3/3
 #        上游 waifu2x 只发布 noise0~3 四组权重，“最高”回落到 noise3。
+#
+# sharp: 收尾锐化的基准强度 (半径 px, 增益)。增益 = 该像素比高斯模糊版多出来的量乘几倍。
+#   为什么需要它：网络出来的边缘天然是「渐变」的。waifu2x CUnet 尤其软 ——
+#   4x 之后一条 1px 的线会摊成 4~7px 的灰带，细线整个糊掉。
+#   实测（351×1295 的动漫插画 → 4x，拉普拉斯方差，越大越锐）：
+#       双三次/Lanczos 基线 9.8 · art 原样 100 · art+锐化 872 · bigjpg 4x 卡通 914
+#   锐化只在边缘起作用：平坦区 32×32 块的 std 始终 0.00，不会把干净的地方磨出噪点。
+#   照片档给得保守（真实噪声会被一起放大），插画档给得足。
 PRESETS: dict[str, dict] = {
     "art": {
         "label": "卡通 / 插画",
@@ -71,6 +80,7 @@ PRESETS: dict[str, dict] = {
         },
         "dn_only": "waifu2x_cunet_art_dn1x.onnx",
         "hint": 2,
+        "sharp": (1.3, 2.0),
     },
     "art-hd": {
         "label": "插画 高清",
@@ -84,6 +94,7 @@ PRESETS: dict[str, dict] = {
         },
         "dn_only": None,
         "hint": 2,
+        "sharp": (1.1, 1.6),
     },
     "photo": {
         "label": "照片 / 实拍",
@@ -97,6 +108,7 @@ PRESETS: dict[str, dict] = {
         },
         "dn_only": None,
         "hint": 2,
+        "sharp": (0.8, 0.6),
     },
     "esrgan": {
         "label": "通用场景",
@@ -105,18 +117,25 @@ PRESETS: dict[str, dict] = {
         "noise": {0: "RealESRGAN_x4plus.onnx"},
         "dn_only": None,
         "hint": 4,
+        "sharp": (0.8, 0.6),
     },
     "anime": {
         "label": "动漫线稿",
-        "desc": "二次元线稿专用",
+        "desc": "二次元线稿专用，线条最硬",
         "tech": "4x-AnimeSharp · 原生 4× · 68 MB · 单权重，无降噪档",
         "noise": {0: "4x-AnimeSharp.onnx"},
         "dn_only": None,
         "hint": 4,
+        "sharp": (1.0, 0.85),
     },
 }
 
 DENOISE_LEVELS = {"none": 0, "low": 1, "medium": 2, "high": 3, "highest": 3}
+
+# 清晰度档位 -> 在预设基准锐度上再乘一个系数。
+# 这三档是给用户「我要更接近线上那种硬线条」的入口，原样就是完全不做锐化。
+CLEAR_LEVELS = {"soft": 0.0, "normal": 1.0, "crisp": 1.5}
+CLEAR_LABELS = {"soft": "原样", "normal": "标准", "crisp": "更锐"}
 
 
 def resolve_model(preset: str, denoise: str, scale: int = 2) -> str:
@@ -154,6 +173,68 @@ def plan_passes(scale: int, native: int) -> tuple[int, int]:
     if k > 1 and (native ** (k - 1)) * 2 >= scale:
         return k - 1, native ** (k - 1)
     return k, full
+
+
+def resolve_sharpen(preset: str, clear: str | float) -> tuple[float, float]:
+    """清晰度 -> 实际用的 (半径, 增益)。传数字就是直接指定增益。"""
+    if isinstance(clear, (int, float)):
+        gain = float(clear)
+    else:
+        mult = CLEAR_LEVELS.get(clear)
+        if mult is None:
+            raise SystemExit(f"未知清晰度 '{clear}'，可选：{', '.join(CLEAR_LEVELS)}")
+        gain = PRESETS[preset].get("sharp", (0.0, 0.0))[1] * mult
+    radius = PRESETS[preset].get("sharp", (0.0, 0.0))[0]
+    return radius, gain
+
+
+# --------------------------------------------------------------------------- #
+# 收尾锐化（unsharp mask）
+# --------------------------------------------------------------------------- #
+def _gauss_kernel(radius: float) -> np.ndarray:
+    k = max(1, int(math.ceil(radius * 3.0)))
+    x = np.arange(-k, k + 1, dtype=np.float32)
+    w = np.exp(-(x * x) / (2.0 * radius * radius))
+    return (w / w.sum()).astype(np.float32)
+
+
+def _gauss_blur(rgb: np.ndarray, radius: float, row_chunk: int = 256) -> np.ndarray:
+    """可分离高斯模糊，float32，边界 reflect。
+
+    按行分块做：16x 的大图有 3 亿多像素，整幅中转一下就是好几个 GB。
+    分块后每个中转数组只跟 chunk 行有关，峰值内存跟图高无关。
+    """
+    w = _gauss_kernel(radius)
+    k = len(w) // 2
+    H, W, _ = rgb.shape
+    out = np.empty_like(rgb)
+    for y0 in range(0, H, row_chunk):
+        y1 = min(H, y0 + row_chunk)
+        y0e, y1e = max(0, y0 - k), min(H, y1 + k)
+        blk = rgb[y0e:y1e]
+        # 竖向
+        pad = np.pad(blk, ((k, k), (0, 0), (0, 0)), mode="reflect")
+        v = np.zeros_like(blk)
+        for i, wi in enumerate(w):
+            v += wi * pad[i:i + blk.shape[0]]
+        # 横向
+        pad2 = np.pad(v, ((0, 0), (k, k), (0, 0)), mode="reflect")
+        o = np.zeros_like(v)
+        for i, wi in enumerate(w):
+            o += wi * pad2[:, i:i + blk.shape[1]]
+        out[y0:y1] = o[y0 - y0e:y1 - y0e]
+    return out
+
+
+def unsharp(rgb: np.ndarray, radius: float, gain: float) -> np.ndarray:
+    """边缘锐化：rgb + gain * (rgb - 模糊版)。gain<=0 直接原样返回。
+
+    只加在「比模糊版更亮/更暗」的像素上，也就是边缘；平坦区 rgb≈模糊版，
+    加了个零 —— 这是它不会把干净区域磨出噪点的原因。
+    """
+    if gain <= 0 or radius <= 0:
+        return rgb
+    return np.clip(rgb + gain * (rgb - _gauss_blur(rgb, float(radius))), 0.0, 1.0)
 
 
 # --------------------------------------------------------------------------- #
@@ -467,7 +548,8 @@ def build_runner(preset: str, scale: int, denoise: str = "medium", device: str =
 
 def upscale(rgb: np.ndarray, preset: str, scale: int, denoise: str = "medium",
             device: str = "auto", tile: int = 256, overlap: int = 16,
-            on_stage=None, runner: SRRunner | None = None) -> np.ndarray:
+            clear: str | float = "normal", on_stage=None,
+            runner: SRRunner | None = None) -> np.ndarray:
     runner = runner or build_runner(preset, scale, denoise, device, tile, overlap)
     passes, net_scale = plan_passes(scale, runner.scale)
     cur = rgb
@@ -479,6 +561,11 @@ def upscale(rgb: np.ndarray, preset: str, scale: int, denoise: str = "medium",
         h, w = cur.shape[0] * scale // net_scale, cur.shape[1] * scale // net_scale
         cur = np.asarray(Image.fromarray((cur * 255 + 0.5).astype(np.uint8))
                          .resize((w, h), Image.LANCZOS), np.float32) / 255.0
+    radius, gain = resolve_sharpen(preset, clear)
+    if gain > 0:
+        if on_stage:
+            on_stage(f"收尾锐化 · 半径 {radius}px 增益 {gain:.2f}", passes, passes)
+        cur = unsharp(cur, radius, gain)
     return cur
 
 
@@ -534,6 +621,8 @@ def main(argv=None):
     ap.add_argument("--preset", default="art", help="预设：" + "/".join(PRESETS))
     ap.add_argument("--scale", type=int, default=4, choices=[1, 2, 4, 8, 16], help="放大倍率")
     ap.add_argument("--denoise", default="medium", help="降噪程度：" + "/".join(DENOISE_LEVELS))
+    ap.add_argument("--clear", default="normal",
+                    help="清晰度（收尾锐化）：" + "/".join(CLEAR_LEVELS) + "，也可直接给增益数字")
     ap.add_argument("--tile", type=int, default=256, help="瓦片边长（显存不够就调小）")
     ap.add_argument("--overlap", type=int, default=16, help="瓦片重叠像素")
     ap.add_argument("--device", default="auto", choices=["auto", "dml", "cpu"])
@@ -547,6 +636,10 @@ def main(argv=None):
             print(f"{k:8s} ~{v['hint']}x  {v['desc']}  ({v.get('tech', '')})")
             for idx, f in v["noise"].items():
                 print(f"          降噪档 {idx} -> {f}")
+            r, g = v.get("sharp", (0, 0))
+            print("          清晰度 标准 -> 半径 %.1fpx / 增益 %.2f" % (r, g))
+        print("\n清晰度档位：" + " / ".join(
+            f"{k}(×{v:g})" for k, v in CLEAR_LEVELS.items()))
         return
     if args.info:
         _print_info()
@@ -575,6 +668,8 @@ def main(argv=None):
     print(f"模型 {runner.name}")
     print(f"  设备 {runner.device.upper()} | 网络原生 {runner.scale}x | 目标 {args.scale}x "
           f"| 串联 {passes} 次 | 外扩 {runner.pad}px / 裁回 {runner.crop}px | 瓦片 {runner.tile}(+{runner.overlap})")
+    _r, _g = resolve_sharpen(args.preset, args.clear)
+    print(f"  清晰度 {args.clear}（锐化半径 {_r}px · 增益 {_g:.2f}）")
 
     for i, (f, out) in enumerate(targets, 1):
         rgb, alpha, mode = load_image(f)
@@ -600,6 +695,10 @@ def main(argv=None):
             th, tw = h0 * args.scale, w0 * args.scale
             cur = np.asarray(Image.fromarray((cur * 255 + 0.5).astype(np.uint8))
                              .resize((tw, th), Image.LANCZOS), np.float32) / 255.0
+        radius, gain = resolve_sharpen(args.preset, args.clear)
+        if gain > 0:
+            print(f"    收尾锐化 半径 {radius}px · 增益 {gain:.2f}")
+            cur = unsharp(cur, radius, gain)
         save_image(cur, out, upscale_alpha(alpha, args.scale))
         print(f"    -> {out}  {cur.shape[1]}x{cur.shape[0]}  用时 {time.time()-t0:.1f}s")
 

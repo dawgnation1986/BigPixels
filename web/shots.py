@@ -7,6 +7,7 @@
     python web/shots.py --src 图.png          # 先提交一个任务，再拍结果态和全屏态
     python web/shots.py --job 7b781573c6ed    # 用已完成的任务拍
     python web/shots.py --probe               # 额外量一遍放大镜的跟手程度
+    python web/shots.py --mobile --size 390,844    # 手机版面（真机视口 + 触摸模拟）
 
 走 CDP（web/cdp.py），所以能做静态截图做不到的两件事：
   · 真的进全屏再拍 —— 靠 JS 里 requestFullscreen，不做版式特判
@@ -123,6 +124,29 @@ CHECK = r"""
   return {
     engine: t('#engine').slice(0, 34),
     presets: kids('#presets'), scales: kids('#scales'), denoise: kids('#denoise'),
+    /* 清晰度三档必须真的画在「5 线条要多清楚」那个分组里。踩过一次：单选框的 id
+       取了 #clear，跟源图卡片上「移除」那个按钮撞名 —— radioGroup 按 id 找容器，
+       找到的是那个按钮，整组控件就被渲染进卡片里，控制台里那一栏空空如也，
+       页面上一个错都不报。所以这里不只看「有几档」，还要看它落在哪个分组里；
+       顺带查一遍全页重复 id，这类事故的根子都在那儿。 */
+    clearLevels: kids('#clarity'),
+    clarityGrp: (() => {
+      const e = q('#clarity');
+      if (!e) return null;
+      const g = e.closest('.grp');
+      const eb = g && g.querySelector('.eyebrow span');
+      return {kids: e.children.length, tag: e.tagName.toLowerCase(),
+              grp: g ? ((eb && eb.textContent) || '').trim() : null,
+              /* 认分组认 id，不认文案 —— 文案随时会改，改一个字探针就废了 */
+              own: !!e.closest('#clarityGrp')};
+    })(),
+    dupIds: (() => {
+      const seen = {}, dup = [];
+      document.querySelectorAll('[id]').forEach(e => {
+        if (seen[e.id]) { if (!dup.includes(e.id)) dup.push(e.id); } else { seen[e.id] = 1; }
+      });
+      return dup;
+    })(),
     keepMode: kids('#keepMode'), keepNote: t('#keepNote').slice(0, 26),
     modelWarn: q('#modelWarn') ? !q('#modelWarn').hidden : null,
     saveNote: q('#saveNote') ? !q('#saveNote').hidden : null,
@@ -186,17 +210,33 @@ CHECK = r"""
     shown: ['#imIn','#imBic','#imAi'].map(s => {
       const i = q(s); return i ? Math.round(i.width) : 0; }),
     fs: !!document.fullscreenElement,
+    /* 真机验收要看的三样：视口到底多宽（Chrome 会把窗口卡在 500，不覆盖就量不到 390）、
+       pointer:coarse 有没有命中（触屏文案靠它切）、横向有没有被撑出滚动条。 */
+    vw: innerWidth, vh: innerHeight,
+    coarse: matchMedia('(pointer:coarse)').matches,
+    hScroll: document.documentElement.scrollWidth > innerWidth + 1,
+    docW: document.documentElement.scrollWidth,
+    dropHint: t('#drop small'),
     err: window.__err || []
   };
 })()
 """
 
 
-def report_check(c: dict):
+def report_check(c: dict, mobile: bool = False):
     err = c.get("err") or []
     print("      检查：引擎 " + (c.get("engine") or "—")
           + f" · 预设 {c['presets']} 档 · 倍率 {c['scales']} 档 · 降噪 {c['denoise']} 档"
           + f" · 结果去向 {c['keepMode']} 项")
+    if c.get("vw"):
+        print(f"            视口 {c['vw']}×{c['vh']}"
+              f" · pointer:coarse {'命中（触屏文案）' if c['coarse'] else '未命中（鼠标文案）'}"
+              + (f"   ⚠ 横向撑到 {c['docW']} px，出横向滚动条了" if c["hScroll"] else "   无横向滚动"))
+    if c.get("dropHint"):
+        print("            选图提示：" + c["dropHint"])
+    cg = c.get("clarityGrp") or {}
+    print(f"            清晰度 {cg.get('kids')} 档 · 落在「{cg.get('grp')}」分组"
+          + ("" if c.get("dupIds") else " · 全页无重复 id"))
     if c.get("keepNote"):
         print("            " + c["keepNote"])
     if c.get("modelWarn"):
@@ -235,6 +275,13 @@ def report_check(c: dict):
     if c.get("saveNote") is not None:
         print(f"            去向提醒 {'显示' if c['saveNote'] else '未显示'}")
     bad = []
+    if c.get("hScroll"):
+        bad.append(f"横向出滚动条了（文档 {c['docW']} px > 视口 {c['vw']} px）")
+    if c.get("dupIds"):
+        bad.append("页面上有重复 id：" + "、".join("#" + x for x in c["dupIds"]))
+    cg = c.get("clarityGrp")
+    if not cg or cg.get("kids") != 3 or not cg.get("own"):
+        bad.append(f"清晰度控件没画进「线条要多清楚」那一组（{cg}）")
     if c.get("loupeHidden") is False:
         # 放大镜必须排在「这次改了什么」之前；取景滑块必须真的画出来了（用户截图里没见到它）；
         # 光台和放大镜必须同屏 —— 用户的原话是「鱼和熊掌不可兼得」。
@@ -245,8 +292,9 @@ def report_check(c: dict):
             bad.append(f"取景滑块没画出来（{sb}）")
         # 视口够高（≥800，含 1600×900 那种 vh≈802 的笔记本）就必须两样都在一屏里
         # —— 用户的原话是「鱼和熊掌不可兼得」；再矮的窗口本来就该滚，不硬凑。
+        # 手机不算：窄屏版面是刻意的单列，光台和放大镜本来就该顺次往下排。
         f = c.get("fit")
-        if f and not f["fits"] and f["vh"] >= 800:
+        if f and not f["fits"] and f["vh"] >= 800 and not mobile:
             bad.append(f"光台和放大镜不在同一屏（差 {-f['free']} px）")
     if err:
         print("      ! JS 报错 " + str(len(err)) + " 条：")
@@ -494,6 +542,10 @@ def main():
                          "会掉到 800×600，量出来的格子尺寸是假的 —— 所以进全屏后用"
                          "设备指标覆盖成真实屏幕的尺寸再量。传 0 就不覆盖。")
     ap.add_argument("--probe", action="store_true", help="额外量一遍放大镜跟手程度")
+    ap.add_argument("--mobile", action="store_true",
+                    help="按真机视口渲染（设备指标覆盖 + 触摸模拟），用来验收手机版面。"
+                         "不加这个的话 Chrome 把窗口宽度卡在 500，--size 390 根本渲染不出来，"
+                         "而且 pointer:coarse 不会命中、触屏文案的量法就是假的。")
     a = ap.parse_args()
     base = f"http://{a.host}:{a.port}/"
     W, H = (int(v) for v in a.size.split(","))
@@ -531,6 +583,16 @@ def main():
     with Session(base, size=(W, H), profile=PROFILE) as s:
         if not s.ready():
             raise SystemExit("页面没起来，检查服务是不是还在跑")
+        if a.mobile:
+            s.call("Emulation.setDeviceMetricsOverride", width=W, height=H,
+                   deviceScaleFactor=1, mobile=True)
+            s.call("Emulation.setTouchEmulationEnabled", enabled=True, maxTouchPoints=5)
+            time.sleep(0.5)
+            real = (s.js("innerWidth"), s.js("innerHeight"),
+                    s.js("matchMedia('(pointer:coarse)').matches"))
+            print(f"  ..  真机模式：视口 {real[0]}×{real[1]}"
+                  f" · pointer:coarse {'命中' if real[2] else '未命中'}"
+                  + ("" if real[0] == W else f"   ⚠ 没能覆盖成 {W} px，量的还是 {real[0]} px"))
         s.call("Page.addScriptToEvaluateOnNewDocument", source=TRAP)
         for name, url, note, with_loupe in plan:
             print(f"  ..  {name}  {note}")
@@ -559,14 +621,14 @@ def main():
                     fw, fh = (int(v) for v in a.fs_size.split(","))
                     real = (s.js("innerWidth"), s.js("innerHeight"))
                     s.call("Emulation.setDeviceMetricsOverride", width=fw, height=fh,
-                           deviceScaleFactor=1, mobile=False)
+                           deviceScaleFactor=1, mobile=a.mobile)
                     print(f"      视口 {real[0]}×{real[1]} 覆盖成 {fw}×{fh}"
                           f" —— 不覆盖的话量出来的格子尺寸是假的")
                     time.sleep(0.5)
                 hover_stage(s, 0.5, 0.5)
                 time.sleep(0.5)
             c = s.js(CHECK)
-            if not report_check(c):
+            if not report_check(c, a.mobile):
                 errors.append(name)
             out = os.path.join(SHOTS, name.split("-")[0] + ".png")
             ok = s.shot(out)
@@ -576,7 +638,11 @@ def main():
                 s.js("document.exitFullscreen && document.exitFullscreen()")
                 time.sleep(0.6)
                 if a.fs_size and a.fs_size != "0":
-                    s.call("Emulation.clearDeviceMetricsOverride")
+                    if a.mobile:      # 真机模式下别把基础视口一起清了，后面还有一张深色要拍
+                        s.call("Emulation.setDeviceMetricsOverride", width=W, height=H,
+                               deviceScaleFactor=1, mobile=True)
+                    else:
+                        s.call("Emulation.clearDeviceMetricsOverride")
                     time.sleep(0.3)
 
         if a.probe:
@@ -586,7 +652,7 @@ def main():
             s.ready()
             hover_stage(s, 0.5, 0.5)
             wait_loupe(s)
-            if not report_check(s.js(CHECK)):
+            if not report_check(s.js(CHECK), a.mobile):
                 errors.append("probe")
             stage = s.js("(() => {const i = document.querySelector('#imgAfter');"
                          "return {nat: [i.naturalWidth, i.naturalHeight],"

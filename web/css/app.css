@@ -343,6 +343,20 @@ select{
   pointer-events:none;white-space:nowrap;
 }
 .stagebox:fullscreen .fsHint{display:block}
+/* 全屏里那颗「退出全屏」。
+   平时不显示 —— .loupe 只有在全屏时才是 .stagebox 的后代（见 app.js 的 moveLoupe），
+   所以这条选择器天然只在全屏成立，非全屏的放大镜栏里不会冒出来。
+   为什么必须有：全屏元素是 .stagebox，而「全屏对比」那颗键在它外面的工具栏里，
+   一进全屏就跟着看不见了 —— 桌面有 Esc 兜着，手机没键盘，不给颗看得见的键就退不出来。 */
+.fsExit{
+  display:none;align-items:center;justify-content:center;
+  min-height:34px;padding:0 12px;cursor:pointer;
+  border:1px solid var(--stage-line);border-radius:var(--r);
+  background:rgba(255,255,255,.10);color:var(--stage-ink);
+  font:400 var(--t-xs)/1 var(--font-mono);
+}
+.fsExit:hover{background:rgba(255,255,255,.2)}
+.stagebox:fullscreen .fsExit{display:inline-flex}
 /* 一屏之内同时装下光台和放大镜 —— 用户的原话是「鱼和熊掌不可兼得了」：
    鼠标在光台上框住哪一块是「看哪儿」，放大镜是「看清什么」，两个必须同屏。
    改之前在 1920×1080 的窗口里量过：光台 596 + 间隔 145 + 放大镜 437 = 1178 px，
@@ -559,3 +573,103 @@ select{
 @keyframes rise{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
 .reveal{animation:rise .46s cubic-bezier(.2,.7,.3,1) both;animation-delay:var(--d,0s)}
 @media (prefers-reduced-motion:reduce){.reveal{animation:none}}
+
+/* ============================================================================
+   手机（窄屏）版面 —— ≤700px
+
+   桌面那套是「左控制栏 + 右光台/放大镜」的横向布局，而且光台和放大镜还得
+   挤在同一屏里（见上面 .lightbox 那段算账）。手机上横向根本没得挤，规矩换掉：
+
+     · 版面单列（1080px 那条断点已经做了），间距一律收紧，把宽度让给内容；
+     · 全屏对比从「左光台 + 右竖栏」改成「上光台 + 下三格一排」——
+       390px 宽下右栏只剩 156px，三格挤成三条缝，等于没得看；
+     · 倍率档位允许折行（桌面故意 nowrap：那时候栏宽够，折行反而乱，
+       窄屏不折就是一条横向滚动条，而这一栏 overflow:hidden，等于被切掉）；
+     · 点击区抬到 44px —— 手指比鼠标粗，36px 的档位按不准；
+     · 带「鼠标」字样的文案交给 app.js 按 (pointer:coarse) 换掉。
+
+   横屏手机（844×390）不用特判：宽度过 700，走的就是桌面那套左右布局，
+   而那正好是横屏该有的样子（光台 704 宽、右栏 140 宽，两边都够用）。
+   ============================================================================ */
+@media (max-width:700px){
+
+  /* ---- 骨架：收紧边距 ---- */
+  .shell{padding-block:16px 40px;padding-inline:14px}
+  .bench{gap:22px;margin-block:18px 0}
+  .console{gap:22px}
+  .topbar{gap:10px;padding-block:0 11px}
+  .brand h1{gap:7px}
+  .engine{gap:5px}
+  .chip{padding:4px 7px}
+  .foot{margin-block-start:30px}
+
+  /* ---- 输入 ---- */
+  .drop{padding:18px 14px}
+  /* 缩略图那行在窄屏塞不下三列，按钮挪到下一行平分宽度 */
+  .loaded{grid-template-columns:56px minmax(0,1fr);gap:10px}
+  .loaded img{width:56px;height:56px}
+  .btns{grid-column:1/-1;flex-direction:row}
+  .btns .mini{flex:1}
+  .pick{gap:9px;padding:11px 7px}
+
+  /* ---- 点击区：手指得按得准 ---- */
+  .seg label{min-height:44px}
+  .mini{min-height:40px}
+  select{min-height:44px}
+  .go{min-height:50px}
+  .themer{min-height:44px}
+  .adv > summary,.foot summary{min-height:44px;display:flex;align-items:center}
+  /* 折叠栏的三角本来靠 ::before 定位，summary 一变 flex 就得让它别被拉伸 */
+  .adv > summary::before{flex:none}
+
+  /* ---- 光台 ---- */
+  /* min-height:280px 是给桌面那个大横图留的，手机上它会把空态撑出一大块空白 */
+  .stagebox{min-height:0;padding:10px}
+  .empty-state{padding:20px 8px;gap:10px}
+  .empty-state .fig{font-size:26px}
+  .corner{font-size:10px;padding:2px 5px}
+  .grip{width:52px;height:52px}          /* 拖动条更好抓 */
+  .toolbar{gap:9px}
+  .toolbar .grow{min-width:100%}          /* 说明自己占一行，两个按钮并排在下面 */
+  .toolbar .dl{flex:1;justify-content:center;min-height:44px}
+
+  /* ---- 放大镜 ---- */
+  .loupe .seg{flex-wrap:wrap;justify-content:flex-start}
+  .loupe .seg label{flex:1 1 auto;padding:0 6px}
+  .panes{column-gap:8px}
+  #zoomNote{font-size:10.5px}
+  .pane .cap{flex-wrap:wrap;row-gap:1px}   /* 三格只有一百来像素宽，挤不下就让「原图 / 尺寸」分两行 */
+  .pane .cap b{font-size:var(--t-xs)}
+  .pane .cap code{font-size:10px}
+
+  /* ---- 全屏对比：改成上下堆叠 ----
+     桌面是 grid-template-columns:1fr + --fsbar（右侧竖栏）。窄屏竖栏只剩
+     156px，三格没法看。改成上面光台、下面三格一排：
+       行 1  minmax(0,1fr)  ← 光台吃掉剩下的高度（最小可以是 0，不让它撑）
+       行 2  auto           ← 三格那条按内容高，内容多高就多高
+     光台高度不会失控：.viewport 是「宽 100% + aspect-ratio + max-width」，
+     高 = min(容器宽, max-width) ÷ 宽高比 ≤ max-width ÷ arn = 52dvh。
+     也就是说无论图是横是竖，光台都不会高过 52dvh，剩下全归三格那条。 */
+  .stagebox:fullscreen{
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:minmax(0,1fr) auto;
+  }
+  /* margin:auto 在这里有两个作用：居中，以及**挡住 align-items:stretch**
+     ——不带 auto 外边距的话网格项会被拉满整行高，宽高比当场就废了 */
+  .stagebox:fullscreen .viewport{
+    width:100%;max-width:calc(52dvh * var(--arn,1.5));
+    height:auto;max-height:none;margin:auto;
+  }
+  .stagebox:fullscreen .loupe{
+    margin:0;border-inline-start:0;border-top:1px solid var(--stage-line);
+    padding:11px 12px;gap:9px;
+  }
+  /* 底这一条横着放得开，三格回到一排（桌面全屏是竖排单列，为的是塞进窄竖栏） */
+  .stagebox:fullscreen .panes{grid-template-columns:repeat(3,minmax(0,1fr));column-gap:8px}
+  .stagebox:fullscreen .pane .win{width:100%}
+  .stagebox:fullscreen .loupe .seg{flex-wrap:wrap;justify-content:flex-start}
+  .stagebox:fullscreen .loupe .seg label{flex:1 1 auto}
+  .stagebox:fullscreen .fsHint{left:50%}
+  .stagebox:fullscreen .fsExit{min-height:44px;padding:0 14px}   /* 手指按得准 */
+}
+

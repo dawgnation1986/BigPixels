@@ -802,6 +802,14 @@ def run_job(jid: str) -> None:
             cur = np.asarray(u8(cur).resize((tw, th), Image.LANCZOS),
                              np.float32) / 255.0
 
+        # 收尾锐化：网络出来的边是渐变过渡，一条 1px 细线摊到 4x 就是一条灰带。
+        # 这一步只加在边缘上（平坦处 rgb≈模糊版，加的是零），所以不会磨出噪点。
+        sh_r, sh_g = U.resolve_sharpen(j["preset"], j.get("clear", "normal"))
+        if sh_g > 0:
+            j["stage"] = f"收尾锐化（清晰度 {j.get('clear', 'normal')}）"
+            cur = U.unsharp(cur, sh_r, sh_g)
+        j["sharp_radius"], j["sharp_gain"] = sh_r, round(sh_g, 3)
+
         j["stage"] = "保存结果"
         j["progress"] = 100
         out = os.path.join(d, "result.png")
@@ -993,6 +1001,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "denoise": [{"id": "none", "label": "关"}, {"id": "low", "label": "低"},
                         {"id": "medium", "label": "中"}, {"id": "high", "label": "高"},
                         {"id": "highest", "label": "最高"}],
+            "clear": [{"id": "soft", "label": U.CLEAR_LABELS["soft"],
+                       "desc": "网络原样，最保险，不引入任何振铃"},
+                      {"id": "normal", "label": U.CLEAR_LABELS["normal"],
+                       "desc": "默认：把软掉的边缘收回来"},
+                      {"id": "crisp", "label": U.CLEAR_LABELS["crisp"],
+                       "desc": "线条最硬。细密的线最清楚，也最容易看出处理痕迹"}],
             "scales": [2, 4, 8, 16],
             "tiles": [128, 192, 256, 384, 512],
             "providers": U.ort.get_available_providers(),
@@ -1189,6 +1203,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         preset = (q.get("preset") or ["art"])[0]
         denoise = (q.get("denoise") or ["medium"])[0]
+        clear = (q.get("clear") or ["normal"])[0]
         name = (q.get("name") or ["upload.png"])[0]
         try:
             scale = int((q.get("scale") or ["4"])[0])
@@ -1197,6 +1212,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._err(400, "scale 和 tile 都得是整数")
         if preset not in U.PRESETS:
             return self._err(400, f"没有这个预设：{preset}")
+        if clear not in U.CLEAR_LEVELS:
+            return self._err(400, f"没有这个清晰度：{clear}")
         if scale not in (1, 2, 4, 8, 16):
             return self._err(400, "放大倍数只能是 1 / 2 / 4 / 8 / 16")
         if tile not in (128, 192, 256, 384, 512):
@@ -1229,7 +1246,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         j = {"id": jid, "state": "queued", "progress": 0, "stage": "排队中",
              "preset": preset, "preset_label": U.PRESETS[preset].get("label", preset),
-             "scale": scale, "denoise": denoise, "tile": tile,
+             "scale": scale, "denoise": denoise, "clear": clear, "tile": tile,
              "name": name, "src": src, "queued": t, "elapsed": 0.0,
              "dir": d, "rel": os.path.relpath(d, ROOT), "keep": bool(CFG["keep"]),
              "tiles": {}}

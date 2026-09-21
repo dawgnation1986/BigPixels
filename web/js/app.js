@@ -29,6 +29,23 @@ const TILE_MAX = 4096;       // 跟服务端 TILE_REQ_MAX 对齐：单次取块�
 const NOISE_PRESETS = ["art", "art-hd", "photo"];
 const OUT_MP_WARN = 64, OUT_MP_STOP = 160;
 
+/* 触摸设备（手机 / 平板）：没有 hover，也没有鼠标。
+   所有「把鼠标放到图上」「拖入图片」的说法在这类设备上都是错的，
+   得换成「点一下」「点这里选图」。文案分两处：
+     · HTML 里另挂一套，写在 data-touch 属性上，由 applyTouchCopy() 抄进去；
+     · JS 现拼的用 T(鼠标说法, 触摸说法) 当场二选一。
+   桌面那一套原样不动 —— 两边说的都得是实话。
+   判据用 (pointer:coarse) 而不是宽度：带触摸屏的笔记本主指针仍是鼠标，
+   不该被当成手机。 */
+const TOUCH = matchMedia("(pointer:coarse)").matches;
+const T = (mouse, touch) => (TOUCH ? touch : mouse);
+function applyTouchCopy() {
+  if (!TOUCH) return;
+  document.querySelectorAll("[data-touch]").forEach(el => {
+    el.textContent = el.dataset.touch;
+  });
+}
+
 const S = {
   cfg: null,
   src: null,        // {url,name,w,h,blob?,bytes?,revoke?}
@@ -36,7 +53,7 @@ const S = {
   result: null,
   timer: null,
   ticks: 0,
-  sel: {preset: "art", scale: 4, denoise: "medium", tile: 256},
+  sel: {preset: "art", scale: 4, denoise: "medium", clear: "normal", tile: 256},
   split: 50,
   zoom: 1,
   zoomOn: null,     // 当前选中的预设档（拖过滑块就是 null —— 这时没有哪个档位被选中）
@@ -241,7 +258,9 @@ function setSource(src) {
   S.view = null;
   S.pending = null;
   S.tok++;
-  $("#stageNote").textContent = "结果出来后，把鼠标放到图上，下面的放大镜会跟上。";
+  $("#stageNote").textContent = T(
+    "结果出来后，把鼠标放到图上，下面的放大镜会跟上。",
+    "结果出来后，点一下图上看哪儿，下面的放大镜就跟到那一块。");
   clearErr();
   $("#go").disabled = false;
   $("#go").textContent = "开始放大";
@@ -381,6 +400,20 @@ function renderScales(c) {
 function renderDenoise(c) {
   radioGroup($("#denoise"), "denoise", c.denoise, S.sel.denoise,
     it => it.label, id => { S.sel.denoise = id; });
+}
+
+/* 清晰度：收尾锐化的强弱。原样 = 完全不锐化，更锐 = 线条最硬（接近线上那种观感）。
+   注意 id 用 clarity 不是 clear —— #clear 已经是「移除」那个按钮了，撞了名字
+   会把这个单选框整个渲染进源图卡片里。 */
+function renderClear(c) {
+  if (!c.clear) return;
+  radioGroup($("#clarity"), "clear", c.clear, S.sel.clear,
+    it => it.label, id => { S.sel.clear = id; });
+}
+
+function clearLabel(id) {
+  const it = (S.cfg && S.cfg.clear || []).find(x => x.id === id);
+  return it ? it.label : id;
 }
 
 /* 档位是「想要的倍率」，实际能放出多大还要看图片尺寸和取块边长上限 ——
@@ -554,8 +587,8 @@ async function start() {
   try {
     const blob = await sourceBlob();
     const q = new URLSearchParams({preset: S.sel.preset, scale: S.sel.scale,
-                                  denoise: S.sel.denoise, tile: S.sel.tile,
-                                  name: S.src.name});
+                                  denoise: S.sel.denoise, clear: S.sel.clear,
+                                  tile: S.sel.tile, name: S.src.name});
     const r = await fetch("/api/job?" + q, {method: "POST", body: blob});
     const j = await r.json().catch(async () => ({error: await r.text()}));
     if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
@@ -835,6 +868,20 @@ $("#viewport").addEventListener("pointermove", e => {
   scheduleLoupe();
 });
 
+/* 触摸设备上光靠 pointermove 不够：手指点一下（没移动）根本不产生 pointermove，
+   于是「点图上看细节」在手机上完全没反应 —— 放大镜永远停在画面正中。
+   所以点按也要喂一次位置。拖动时 pointermove 照样会来，两条路汇到同一个 scheduleLoupe。
+
+   这里**只**管放大镜，不碰分割线：桌面那个 pointerdown 会顺手把分割线拖到点击处，
+   手指一点就跳太吓人了，所以那条规则刻意只认 pointerType==="mouse"，
+   这里也把 mouse 排除掉，两边各管各的。 */
+$("#viewport").addEventListener("pointerdown", e => {
+  if (!S.result || e.pointerType === "mouse") return;
+  if (e.target.closest("#grip")) return;      // 按的是分割线上的抓手，别抢
+  S.ptr = {x: e.clientX, y: e.clientY};
+  scheduleLoupe();
+});
+
 /* 取景滑块。拖动时不带 from，于是 S.zoomOn 清空 —— 倍率不再等于任何一个档位，
    档位那排就该一个都不亮（滑块本来就落在两档之间）。反过来点档位时
    setZoom(+id, +id) 会把滑块挪到对应位置，两边始终一致。 */
@@ -932,6 +979,10 @@ $("#fs").onclick = () => {
   }
 };
 document.addEventListener("fullscreenchange", refreshFs);
+
+/* 全屏里那颗退出键（只在全屏显示，见 app.css 的 .fsExit）。
+   直接调 exitFullscreen，不绕 #fs.click() —— 省得依赖它此刻的 aria-disabled。 */
+$("#fsExit").onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); };
 window.addEventListener("keydown", e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement || {}).tagName || "")) return;
@@ -975,6 +1026,9 @@ function renderLedger(j) {
 
   const run =
     row("模型", (j.preset_label || "—") + U(" · 降噪 " + (j.denoise ? dnLabel(j.denoise) : "—"))) +
+    row("清晰度", clearLabel(j.clear || "normal") +
+        U(j.sharp_gain ? " · 收尾锐化 半径 " + j.sharp_radius + " px / 增益 " + j.sharp_gain : ""),
+        j.sharp_gain ? "网络出来的边是渐变过渡，这一步只把边缘收回来；平坦区不动，所以不会磨出噪点。" : "这一档没做任何锐化，输出就是网络的原始结果。") +
     row("后端", (j.device || "—") + U(" · 分块 " + num(j.tile, v => v) + " px")) +
     row("权重", String(j.model || "").replace(/\.onnx$/, "") || "—", null, true);
 
@@ -1025,10 +1079,12 @@ function restoreJob(id) {
         if (S.cfg.scales.includes(j.scale)) S.sel.scale = j.scale;
         if (S.cfg.presets.some(p => p.id === j.preset)) S.sel.preset = j.preset;
         if (j.denoise) S.sel.denoise = j.denoise;
+        if (j.clear && (S.cfg.clear || []).some(x => x.id === j.clear)) S.sel.clear = j.clear;
         if (S.cfg.tiles.includes(j.tile)) S.sel.tile = j.tile;
         renderPresets(S.cfg);
         renderScales(S.cfg);
         renderDenoise(S.cfg);
+        renderClear(S.cfg);
         $("#tile").value = S.sel.tile;
       }
       setSource({url: "/api/job/" + j.id + "/input", name: j.name, w: j.in_w, h: j.in_h});
@@ -1043,6 +1099,7 @@ function restoreJob(id) {
   const theme = q.get("theme");
   applyTheme(theme === "dark" || theme === "light" ? theme
              : (localStorage.getItem("bigpixels.theme") || "system"));
+  applyTouchCopy();
   renderZoom();
   fetch("/api/presets")
     .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
@@ -1053,6 +1110,7 @@ function restoreJob(id) {
       renderPresets(c);
       renderScales(c);
       renderDenoise(c);
+      renderClear(c);
       renderTiles(c);
       renderSamples(c);
       renderKeep((c.settings || {}).keep !== false);
