@@ -1,0 +1,18 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""离线画质基准：在自带样例上跑各预设，跟双三次基线比 PSNR / SSIM。
+
+薄壳：真正的实现在 app.cli.bench。
+壳在这里是为了 README 和文档里的老命令照旧能用：`python tools/bench.py …`；
+等价于直接 `python -m app.cli.bench …`（不想用壳就删掉这个文件）。
+"""
+import os
+import sys
+
+# 这个文件躺在 tools/ 里，项目根在它上一层 —— 得把根挂上，才 import 得到 app.*
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.cli.bench import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())

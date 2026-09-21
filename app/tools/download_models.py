@@ -18,13 +18,13 @@ BigPixels 模型自检 + 下载
        2 参数或环境有问题
 
 用法：
-    python download_models.py               # 自检 + 缺什么下什么（双击启动脚本走这条）
-    python download_models.py --check       # 只自检，不下载。缺了返回 1
-    python download_models.py --force       # 忽略已有文件，全部重下
-    python download_models.py --source hf   # 走 huggingface.co（默认走国内的 hf-mirror）
-    python download_models.py --dir D:\\x    # 换个模型目录（默认脚本旁边的 models/）
+    python tools/download_models.py               # 自检 + 缺什么下什么（双击启动脚本走这条）
+    python tools/download_models.py --check       # 只自检，不下载。缺了返回 1
+    python tools/download_models.py --force       # 忽略已有文件，全部重下
+    python tools/download_models.py --source hf   # 走 huggingface.co（默认走国内的 hf-mirror）
+    python tools/download_models.py --dir D:\\x    # 换个模型目录（默认项目根下的 models/）
 
-    python upscale.py --info                # 顺手看看引擎眼里的模型状态
+    python tools/upscale.py --info                # 顺手看看引擎眼里的模型状态
 """
 from __future__ import annotations
 

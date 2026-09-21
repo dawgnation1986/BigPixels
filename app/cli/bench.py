@@ -4,8 +4,8 @@
 把「双三次插值」和「AI 超分各预设」放在同一把尺子下比 PSNR / SSIM，并出对比图。
 
 用法：
-    python bench.py                          # 跑默认矩阵
-    python bench.py --scale 4
+    python tools/bench.py                          # 跑默认矩阵
+    python tools/bench.py --scale 4
 """
 from __future__ import annotations
 

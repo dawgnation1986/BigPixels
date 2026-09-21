@@ -47,8 +47,8 @@ python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt   # Windows
 .venv/bin/python    -m pip install -r requirements.txt    # macOS / Linux
 
-python download_models.py        # 下权重（约 292 MB，走 hf-mirror）
-python upscale.py 图片.jpg -o 输出.png --preset art --scale 4    # 命令行单张
+python tools/download_models.py        # 下权重（约 292 MB，走 hf-mirror）
+python tools/upscale.py 图片.jpg -o 输出.png --preset art --scale 4    # 命令行单张
 
 python app/server/bootstrap.py          # 上面那两个脚本干的事：环境 → 模型 → 起服务
 python app/server/bootstrap.py --check  # 只自检（环境 + 模型），不装不下不起服务
@@ -57,29 +57,31 @@ python app/server/bootstrap.py --check  # 只自检（环境 + 模型），不�
 网页版起来后是 http://127.0.0.1:8765（换端口：`--port 8766`，或改 `start_web.bat` 顶部那行）。
 
 模型如果不全，**不用自己对着文件名点**：启动时会逐个自检，缺哪些直接列出来；
-页面上也会顶一条提示，并把预设自动落到还能用的那一档。（CLI 那边 `upscale.py --info` 也能看权重清单。）
+页面上也会顶一条提示，并把预设自动落到还能用的那一档。（CLI 那边 `tools/upscale.py --info` 也能看权重清单。）
 
 ## 命令一览
 
+命令行入口全在 `tools/` 下（薄壳，见「目录」那节）。
+
 ```bat
 :: 二次元插画 4 倍（默认就是 anime，写不写都行）
-.venv\Scripts\python.exe upscale.py in.png -o out.png --preset anime --scale 4
+.venv\Scripts\python.exe tools\upscale.py in.png -o out.png --preset anime --scale 4
 
-:: 想更接近线上观感：加 --clear crisp
-.venv\Scripts\python.exe upscale.py in.png -o out.png --preset anime --scale 4 --clear crisp
+:: 想更接近线上观感：加 --clear crisp 和 --bright lift
+.venv\Scripts\python.exe tools\upscale.py in.png -o out.png --preset anime --scale 4 --clear crisp --bright lift
 
 :: 卡通/插画用轻量老模型（waifu2x，2× 串联两次，只能 CPU，细节会少一截）
-.venv\Scripts\python.exe upscale.py in.png -o out.png --preset art --denoise medium --scale 4
+.venv\Scripts\python.exe tools\upscale.py in.png -o out.png --preset art --denoise medium --scale 4
 
 :: 整个目录批量
-.venv\Scripts\python.exe upscale.py D:\pics -o D:\out --preset esrgan --scale 4
+.venv\Scripts\python.exe tools\upscale.py D:\pics -o D:\out --preset esrgan --scale 4
 
 :: 顺便出一张双三次插值对照图
-.venv\Scripts\python.exe upscale.py in.png --compare
+.venv\Scripts\python.exe tools\upscale.py in.png --compare
 
 :: 看设备和模型状态 / 列预设
-.venv\Scripts\python.exe upscale.py --info
-.venv\Scripts\python.exe upscale.py --list
+.venv\Scripts\python.exe tools\upscale.py --info
+.venv\Scripts\python.exe tools\upscale.py --list
 ```
 
 | 参数 | 取值 | 说明 |
@@ -88,6 +90,7 @@ python app/server/bootstrap.py --check  # 只自检（环境 + 模型），不�
 | `--scale` | `2` `4` `8` `16` | 目标倍率，不足/超出由网络串联 + Lanczos 收尾补齐 |
 | `--denoise` | `none` `low` `medium` `high` `highest` | 降噪档，本质是不同训练噪声水平的权重。只有 waifu2x 系（`art`/`art-hd`/`photo`）有；`anime`/`esrgan` 忽略这一项 |
 | `--clear` | `soft` `normal` `crisp`，或直接给数字 | 收尾清晰度。网络出来的是渐变边，这一档决定要不要把它们压回硬边（见下） |
+| `--bright` | `off` `lift`，或直接给数字 | 明暗。`off` 默认、最贴原图；`lift` 整体 ×1.019，换线上那种通透感（见下） |
 | `--tile` | 默认 256 | 瓦片边长，显存不够就调小 |
 | `--device` | `auto` / `dml` / `cpu` | 推理后端 |
 
@@ -100,13 +103,14 @@ python app/server/bootstrap.py --check  # 只自检（环境 + 模型），不�
 分开只是为了改的时候不用在两千行里翻一段 `<script>`；**没有构建步骤**，
 改完刷新页面就是新的（这两个前缀故意报 `no-store`，免得看到上一版还以为改坏了）。
 
-页面按 bigjpg 的思路做，五步选完就能出结果：
+页面按 bigjpg 的思路做，六步选完就能出结果：
 
 1. **选图** —— 拖进来，或点左边的示例（三张合成样图：线稿 / 小字截图 / 噪点照片）。
 2. **这是什么图** —— 五个预设，各带一句人话说明，**默认落在「动漫插画」**（二次元图这一档细节保留最多）。
 3. **放大多少倍** —— 2× / 4× / 8× / 16×，下面**当场算出输出尺寸**（`360 × 240 → 1,440 × 960`）。
 4. **要不要降噪** —— 关 / 低 / 中 / 高 / 最高。
 5. **线条要多清楚** —— 原样 / 标准 / 更锐。
+6. **明暗** —— 原样 / 提亮。**一个开关，默认关**。
 
 至于分块边长、推理后端、权重清单这些，全在「更多设置与引擎信息」里收着，不挡路。
 
@@ -141,6 +145,29 @@ bigjpg 的指纹是「**用低得多的对比度拿到两倍的锐度**」（41.
 但它治不了「模型本身没补出来的细节」，那得靠上面那张表。
 
 **一句话**：选对预设是主菜（差 3 倍），收尾锐化是调味（再收一点边）。
+
+### 第 6 步「明暗」是什么，为什么默认关
+
+线上 bigjpg 出来的图看着比原图「通透」一点。对着同一张图的平坦区量了一下，
+它其实是**整体提了亮**：亮部 +4.8 灰阶、中间调只 +1.1 灰阶。
+这个形状是**乘法**（把每个像素乘一个略大于 1 的数），不是加常数 ——
+加法会把中间调一起顶上去、还让纯黑发灰。三种拟合试下来乘法的残差最小
+（4.11 灰阶，加常数 4.30，提 gamma 5.88），拟合出来的增益是 **×1.0192**。
+
+所以这一档就是乘 1.019，在「原样 / 提亮」之间切一下：
+
+| | 观感 | 对原图的保真度（PSNR，拿用户那张卡通图量的） |
+|---|---|---|
+| **原样（默认）** | 跟原图一个亮度 | **32.99 dB** |
+| **提亮** | 接近线上那种通透感 | 会掉一点 |
+
+**它是唯一一个「会变差」的档，所以说清楚**：提亮的代价是输出更不像原图。
+顺带一提，就算开着提亮，本地对原图的保真度仍高于线上 bigjpg（30.38 dB）——
+因为 bigjpg 那 +4 灰阶的提亮本身就是它对原图失真的主要来源之一。
+想要「最还原」就保持原样，想要「最像线上」就开提亮，这两个目标在这里是冲突的，
+所以做成开关交给你，而不是替你把默认值调过去。
+
+命令行对应 `--bright off|lift`（也可以直接给乘数，比如 `--bright 1.05`）。
 
 出结果后：
 
@@ -221,7 +248,7 @@ BigPixels 本地版已启动： http://127.0.0.1:8765
 
 权重不全的时候会把缺的那几个列出来（哪个文件、现在多少字节、应该是多少）。
 双击启动那条路会**自动去下**；单独跑 `app/server/server.py` 的话它会提示你去跑
-`python download_models.py`（走 hf-mirror 镜像；慢或者连不上就先开代理再跑）。
+`python tools/download_models.py`（走 hf-mirror 镜像；慢或者连不上就先开代理再跑）。
 页面上同时顶一条提示，并且自动把预设落到还能用的那一档，免得按下去才发现没权重。
 
 页面里图片永远不出这台机器。地址栏会带上任务号（`?job=<id>`），刷新不丢结果，也能把这一份直接发给别人；
@@ -235,7 +262,7 @@ BigPixels 本地版已启动： http://127.0.0.1:8765
 | GET | `/fonts/<file>`、`/demo/<file>` | 自托管字体与示例图（做了路径穿越防护 + 后缀白名单） |
 | GET | `/api/presets` | 预设、降噪档、倍率、分块档、示例图、模型自检、工程目录、磁盘占用、当前设置 |
 | GET | `/api/settings` · POST `?keep=1\|0` | 读 / 改「保存 · 暂存」 |
-| POST | `/api/job?preset=&scale=&denoise=&clear=&tile=&name=` | 请求体直接是图片二进制，返回 `{id}` |
+| POST | `/api/job?preset=&scale=&denoise=&clear=&bright=&tile=&name=` | 请求体直接是图片二进制，返回 `{id}` |
 | GET | `/api/job/<id>` | 进度、阶段、耗时、指标、工程目录（`tiled` 说明哪几层预切了块） |
 | GET | `/api/job/<id>/input` · `/baseline` · `/result` | 原图 / 双三次基线 / AI 结果（都是 PNG） |
 | GET | `/api/job/<id>/result?view=1` | 缩略预览（最长边 1600 px），**光台只碰这个** |
@@ -252,9 +279,10 @@ BigPixels 本地版已启动： http://127.0.0.1:8765
 ```bat
 .venv\Scripts\python.exe app\tools\fetch_fonts.py --force   :: 抓 Archivo + IBM Plex 到 web/fonts/
 .venv\Scripts\python.exe app\tools\make_demo.py             :: 生成三张示例图
-.venv\Scripts\python.exe app\qa\smoke.py                 :: 接口自检（69 项，含真跑一个任务 + 取块逐像素核对
+.venv\Scripts\python.exe app\qa\smoke.py                 :: 接口自检（72 项，含真跑一个任务 + 取块逐像素核对
                                                       ::   + 工程目录布局 + 暂存清空的安全边界 + 设置读写
                                                       ::   + 模型自检 + 迁移幂等 + 删除接口
+                                                      ::   + 明暗开关的数值（提亮 = 整体 ×1.019）
                                                       ::   + /css/ /js/ 的类型和穿越拦截；跑完自己收尾）
 .venv\Scripts\python.exe app\qa\smoke.py --src 大图.png --scale 4   :: 源图够大才会走到「预切块」那条路
 .venv\Scripts\python.exe app\qa\perf_probe.py 8 843x1264  :: 画质/内存对照（只插值中心块 vs 整幅，验逐像素一致）
@@ -292,47 +320,66 @@ BigPixels 本地版已启动： http://127.0.0.1:8765
 
 来源：`deepghs/waifu2x_onnx`、`yuvraj108c/ComfyUI-Upscaler-Onnx`（经 hf-mirror 下载）。
 
-## 实测效果（`bench.py`，160×120 → 640×480）
+## 实测效果（`tools/bench.py`，160×120 → 640×480）
 
 标尺是合成的高清原图，指标是与原图的 PSNR / SSIM。
+下表是**当前代码**跑出来的（含默认的收尾锐化、明暗 `off`）；换成别的 `--clear` / `--bright` 数字会变。
 
 | 样本 | 预设 | 降噪 | PSNR(双三次) | PSNR(AI) | SSIM(双三次) | SSIM(AI) |
 |---|---|---|---|---|---|---|
-| 卡通插画 | art | 中 | 22.10 | **24.73** | 0.7896 | **0.8986** |
-| 卡通插画 | art-hd | 中 | 22.10 | **24.86** | 0.7896 | **0.8925** |
-| 卡通插画 | anime | 无 | 22.10 | **24.77** | 0.7896 | **0.9000** |
-| 卡通插画 | esrgan | 无 | 22.10 | **23.16** | 0.7896 | **0.8699** |
-| 照片 | photo | 中 | 19.97 | 19.69 | 0.6380 | 0.6381 |
-| 加噪照片 | photo | 无 | 18.88 | 18.40 | 0.3511 | 0.4221 |
-| 加噪照片 | photo | 中 | 18.88 | **19.14** | 0.3511 | **0.5968** |
-| 加噪照片 | photo | 最高 | 18.88 | **19.42** | 0.3511 | **0.6311** |
+| 卡通插画 | anime | 无 | 22.10 | **24.77** | 0.7896 | **0.9049** |
+| 卡通插画 | art | 中 | 22.10 | **22.64** | 0.7896 | **0.8817** |
+| 卡通插画 | art-hd | 中 | 22.10 | **23.14** | 0.7896 | **0.8722** |
+| 卡通插画 | esrgan | 无 | 22.10 | **23.20** | 0.7896 | **0.8731** |
+| 照片 | photo | 中 | 19.97 | 19.50 | 0.6380 | 0.6312 |
+| 加噪照片 | photo | 无 | 18.88 | 17.50 | 0.3511 | 0.3570 |
+| 加噪照片 | photo | 中 | 18.88 | **18.59** | 0.3511 | **0.5746** |
+| 加噪照片 | photo | 最高 | 18.88 | **19.04** | 0.3511 | **0.6244** |
 
 结论：
 
-- **卡通 / 插画**：AI 明显赢过双三次，PSNR +2.6dB、SSIM 0.79 → 0.90，边缘从"糊"变"利"。
-- **加噪图**：这才是降噪档的主场，SSIM 0.35 → 0.63，且档位单调（无 0.42 < 中 0.60 < 最高 0.63），证明 noise0~3 是真实生效的独立权重。
-- **干净的照片**：跟双三次基本打平。因为样本是 Lanczos 降采样的合成图，双三次本来就能还原得不错；真实场景里压缩痕迹重的低分图收益会大得多。
+- **卡通 / 插画**：最好的那一档（`anime`，也就是默认）PSNR **+2.67dB**、SSIM 0.79 → **0.90**，边缘从"糊"变"利"。
+  waifu2x 那两行（`art` / `art-hd`）只 +0.5 ~ +1.0dB —— 还是那句话：**2× 串联两次会吃掉细节**，
+  选对预设比什么都重要。
+- **加噪图**：这才是降噪档的主场，SSIM 0.35 → **0.62**，且档位单调
+  （无 0.36 < 中 0.57 < 最高 0.62），证明 noise0~3 是真实生效的独立权重。
+- **干净的照片**：跟双三次基本打平（略低一点）。因为样本是 Lanczos 降采样的合成图，
+  双三次本来就能还原得不错；真实场景里压缩痕迹重的低分图收益会大得多。
+  这也是**为什么 `bench.py` 的门禁不给照片立规矩** —— 感知模型会"造"纹理，拿干净 GT 当尺子只会天天误报。
 - 对比图在 `outputs/bench/cmp_*.png`，左中右分别是：像素块原图 / 双三次 / AI。
 
 ## 目录
 
-源码全部收在 `app/` 下，按职责分五个包。根目录只留几个薄壳脚本，让文档里
-写着的命令（`python upscale.py …`）照旧能用。
+源码全部收在 `app/` 下，按职责分五个包。**根目录只留必要的东西**：
+`README.md` / `LICENSE` / `requirements.txt` 和两个双击启动脚本；
+所有命令行入口收进 `tools/`。
 
 ```
+tools/               命令行入口 —— 全是薄壳，里面没有实现
+
+  upscale.py           放大（python tools\upscale.py …）
+  bench.py             跑评测，出 PSNR/SSIM 表和对比图
+  download_models.py   权重自检 + 下载
+  inspect_models.py    摸模型输入输出约定
+  make_samples.py      生成测试图样
+  metrics.py           PSNR / SSIM / 锐度（库接口，不跑命令行）
+
+  每个壳都能删 —— 它只干两件事：把项目根挂到 sys.path 上，再转给 app/ 里的真身。
+  等价写法：python -m app.cli.upscale … / python -m app.tools.download_models …
+
 app/core/            引擎内核 —— 不碰命令行、不碰 HTTP，谁都能 import
 
   paths.py             项目里所有路径的唯一出处（ROOT / models / outputs / .cache）
-  presets.py           预设表、降噪档、清晰度档 → 权重文件和锐化参数的换算
+  presets.py           预设表、降噪档、清晰度档、明暗档 → 权重文件和收尾参数的换算
   runner.py            单个 ONNX 模型的瓦片式推理器
                        （尺寸约定自适配 / 重叠羽化融合 / 后端数值自检）
-  pipeline.py          端到端：串联多次网络 + 收尾缩放 + 收尾锐化
-  imaging.py           读图 / 存图 / unsharp
+  pipeline.py          端到端：串联多次网络 + 收尾缩放 + 收尾锐化 + 明暗
+  imaging.py           读图 / 存图 / unsharp / brighten
   metrics.py           PSNR / SSIM / 锐度 —— 离线评测和网页端共用同一份
 
-app/cli/             命令行
+app/cli/             命令行实现
 
-  upscale.py           放大（python upscale.py …）
+  upscale.py           放大
   bench.py             跑评测，出 PSNR/SSIM 表和对比图
 
 app/server/          网页服务
@@ -341,7 +388,7 @@ app/server/          网页服务
   setup_env.py         建虚拟环境 + 装依赖（单独也能跑，带 --check 只自检）
   server.py            本地网页服务（标准库，无第三方 Web 框架）
 
-app/tools/           资源与模型工具
+app/tools/           资源与模型工具实现
 
   download_models.py   权重自检 + 下载（清单精确到字节，断点续传，走 hf-mirror）
   inspect_models.py    摸模型输入输出约定，排查问题时用
@@ -351,7 +398,7 @@ app/tools/           资源与模型工具
 
 app/qa/              自检与探针（都在真实浏览器/真实服务上跑）
 
-  smoke.py             接口自检（69 项）
+  smoke.py             接口自检（72 项）
   cdp.py               只用标准库写的 Chrome DevTools 客户端
   shots.py             截图 + 量交互（真进全屏、真鼠标事件、抓 JS 报错、量框框跟手）
   perf_probe.py        画质/内存对照：只插值中心块 vs 整幅，验逐像素一致
@@ -371,19 +418,17 @@ start_web.bat        双击启动（Windows）—— 只干一件事：找个 Py
 start_web.sh         双击启动（macOS / Linux），同上
 requirements.txt     依赖：numpy / pillow / onnxruntime（Windows 走 -directml 后端）
 
-upscale.py           薄壳 → app/cli/upscale.py
-bench.py             ─┐
-download_models.py    │ 同样是薄壳，指向 app/ 下对应的模块。
-inspect_models.py     │ 留着是为了老的命令照旧能用，里面没有实现。
-make_samples.py       │
-metrics.py           ─┘
-
 models/              权重（292 MB，不进仓库，第一次启动自动下）
 samples/             测试素材
 outputs/web/         产物：一次工程一个文件夹 <时间戳>_<图名>_<任务号>/
 outputs/settings.json 保存 / 暂存 设置
 outputs/bench/       评测对比图、outputs/ui/ 界面截图
 ```
+
+> 命令行入口原来摊在根目录，后来统一收进 `tools/`，根目录就干净了。
+> 老命令加个前缀就行：`python upscale.py …` → `python tools\upscale.py …`。
+> `download_models.py` 也被启动脚本按路径调（`app/server/bootstrap.py` 里的 `MODELS`），
+> 搬的时候那个路径一起改了 —— 不然双击启动会在第 2 步报找不到文件。
 
 ## 十二个踩过的坑（值得知道）
 

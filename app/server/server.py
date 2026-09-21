@@ -498,7 +498,7 @@ def model_report() -> dict:
                 missing.append(f)
     return {"have": have, "total": total, "ok": not missing,
             "missing": missing, "dir": U.MODEL_DIR,
-            "hint": "python download_models.py"}
+            "hint": "python tools/download_models.py"}
 
 
 def print_model_report(rep: dict) -> None:
@@ -813,6 +813,14 @@ def run_job(jid: str) -> None:
         # 倍率当成锐化增益显示出来。
         j["sharp_radius"], j["sharp_amount"] = sh_r, round(sh_g, 3)
 
+        # 明暗开关放在最后：纯观感调整，不该影响上面任何一步的判断。
+        # 落盘的字段名是 bright_factor，跟指标里的任何字段都不撞。
+        k_b = U.resolve_bright(j.get("bright", "off"))
+        if abs(k_b - 1.0) > 1e-9:
+            j["stage"] = f"明暗（{U.BRIGHT_LABELS.get(j.get('bright', 'off'), '')}）"
+            cur = U.brighten(cur, k_b)
+        j["bright_factor"] = round(k_b, 4)
+
         j["stage"] = "保存结果"
         j["progress"] = 100
         out = os.path.join(d, "result.png")
@@ -1014,6 +1022,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                        "desc": "默认：把软掉的边缘收回来"},
                       {"id": "crisp", "label": U.CLEAR_LABELS["crisp"],
                        "desc": "线条最硬。细密的线最清楚，也最容易看出处理痕迹"}],
+            "bright": [{"id": "off", "label": U.BRIGHT_LABELS["off"],
+                        "desc": "默认：不动明暗，最贴原图"},
+                       {"id": "lift", "label": U.BRIGHT_LABELS["lift"],
+                        "desc": "整体提亮 2%，换线上 bigjpg 那种通透感；"
+                                "代价是比原图亮一点，不算「更还原」"}],
             "scales": [2, 4, 8, 16],
             "tiles": [128, 192, 256, 384, 512],
             "providers": U.ort.get_available_providers(),
@@ -1208,9 +1221,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if u.path != "/api/job":
             return self._err(404, "not found")
 
-        preset = (q.get("preset") or ["art"])[0]
+        preset = (q.get("preset") or ["anime"])[0]
         denoise = (q.get("denoise") or ["medium"])[0]
         clear = (q.get("clear") or ["normal"])[0]
+        bright = (q.get("bright") or ["off"])[0]
         name = (q.get("name") or ["upload.png"])[0]
         try:
             scale = int((q.get("scale") or ["4"])[0])
@@ -1221,6 +1235,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._err(400, f"没有这个预设：{preset}")
         if clear not in U.CLEAR_LEVELS:
             return self._err(400, f"没有这个清晰度：{clear}")
+        if bright not in U.BRIGHT_LEVELS:
+            return self._err(400, f"没有这个明暗档：{bright}")
         if scale not in (1, 2, 4, 8, 16):
             return self._err(400, "放大倍数只能是 1 / 2 / 4 / 8 / 16")
         if tile not in (128, 192, 256, 384, 512):
@@ -1253,7 +1269,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         j = {"id": jid, "state": "queued", "progress": 0, "stage": "排队中",
              "preset": preset, "preset_label": U.PRESETS[preset].get("label", preset),
-             "scale": scale, "denoise": denoise, "clear": clear, "tile": tile,
+             "scale": scale, "denoise": denoise, "clear": clear,
+             "bright": bright, "tile": tile,
              "name": name, "src": src, "queued": t, "elapsed": 0.0,
              "dir": d, "rel": os.path.relpath(d, ROOT), "keep": bool(CFG["keep"]),
              "tiles": {}}

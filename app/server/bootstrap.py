@@ -41,7 +41,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))      # app/server -> app -> 项目根
 
 SETUP = os.path.join(HERE, "setup_env.py")
-MODELS = os.path.join(ROOT, "download_models.py")
+MODELS = os.path.join(ROOT, "tools", "download_models.py")   # 入口薄壳在 tools/ 下
 SERVER = os.path.join(HERE, "server.py")
 DEFAULT_VENV = os.path.join(ROOT, ".venv")
 

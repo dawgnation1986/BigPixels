@@ -61,6 +61,19 @@ def unsharp(rgb: np.ndarray, radius: float, gain: float) -> np.ndarray:
     return np.clip(rgb + gain * (rgb - _gauss_blur(rgb, float(radius))), 0.0, 1.0)
 
 
+def brighten(rgb: np.ndarray, factor: float) -> np.ndarray:
+    """整体乘一个系数：1.0 原样，>1 提亮，<1 压暗。factor<=0 视为原样。
+
+    为什么是「乘」不是「加常数」：量过线上 bigjpg 卡通/插画 4x 的平坦区，
+    它在亮部提了 +4.8 灰阶、中间调只提 +1.1 —— 这是乘法（×1.019）的形状，
+    加法会把中间调一起顶上去、还让纯黑发灰。三种拟合里乘法残差最小
+    （4.11 灰阶，加常数 4.30，提 gamma 5.88）。
+    """
+    if factor <= 0 or abs(float(factor) - 1.0) < 1e-9:
+        return rgb
+    return np.clip(rgb * float(factor), 0.0, 1.0)
+
+
 # --------------------------------------------------------------------------- #
 # 图像读写
 # --------------------------------------------------------------------------- #

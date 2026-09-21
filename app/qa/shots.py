@@ -142,6 +142,17 @@ CHECK = r"""
               /* 认分组认 id，不认文案 —— 文案随时会改，改一个字探针就废了 */
               own: !!e.closest('#clarityGrp')};
     })(),
+    /* 明暗是个开关（原样 / 提亮），同样只查「画没画出来、画在哪一组」。
+       它跟清晰度是同一类事故 —— id 撞名就会被渲染进别的容器里。 */
+    brightGrp: (() => {
+      const e = q('#bright');
+      if (!e) return null;
+      const g = e.closest('.grp');
+      const eb = g && g.querySelector('.eyebrow span');
+      return {kids: e.children.length, tag: e.tagName.toLowerCase(),
+              grp: g ? ((eb && eb.textContent) || '').trim() : null,
+              own: !!e.closest('#brightGrp')};
+    })(),
     dupIds: (() => {
       const seen = {}, dup = [];
       document.querySelectorAll('[id]').forEach(e => {
@@ -239,6 +250,8 @@ def report_check(c: dict, mobile: bool = False):
     cg = c.get("clarityGrp") or {}
     print(f"            清晰度 {cg.get('kids')} 档 · 落在「{cg.get('grp')}」分组"
           + ("" if c.get("dupIds") else " · 全页无重复 id"))
+    bg = c.get("brightGrp") or {}
+    print(f"            明暗 {bg.get('kids')} 档 · 落在「{bg.get('grp')}」分组")
     if c.get("keepNote"):
         print("            " + c["keepNote"])
     if c.get("modelWarn"):
@@ -284,6 +297,9 @@ def report_check(c: dict, mobile: bool = False):
     cg = c.get("clarityGrp")
     if not cg or cg.get("kids") != 3 or not cg.get("own"):
         bad.append(f"清晰度控件没画进「线条要多清楚」那一组（{cg}）")
+    bg = c.get("brightGrp")
+    if not bg or bg.get("kids") != 2 or not bg.get("own"):
+        bad.append(f"明暗开关没画进「明暗」那一组（{bg}）")
     if c.get("loupeHidden") is False:
         # 放大镜必须排在「这次改了什么」之前；取景滑块必须真的画出来了（用户截图里没见到它）；
         # 光台和放大镜必须同屏 —— 用户的原话是「鱼和熊掌不可兼得」。
@@ -461,12 +477,18 @@ def probe_slider(s: Session) -> dict:
         hover_stage(s, 0.5, 0.5)
         time.sleep(0.3)
         rows.append(s.js(SLIDER))
-    # 反向：点第二个档位键，滑块和标签都得跟着动
+    # 反向：按一个档位键，滑块和标签都得跟着动。
+    # 挑的是「倒数第二个」而不是「第二个」：键是按这张图实际能做到的倍率筛出来的，
+    # 少的话只剩两档（小图就是这样，只出 1:1 和 2:1），第二个正好是最右边那个，
+    # 而最右那档映射到滑块端点 1000 —— 上一步刚把滑块拖到 1000，于是"按了没挪窝"。
+    # 那是探针自己挑错了键，不是界面的毛病。跳过最右一档，剩下的按哪档都会动。
     rev = s.js("""(() => {
-      const lab = document.querySelectorAll('#zoom label')[1];
+      const labs = document.querySelectorAll('#zoom label');
+      const lab = labs[Math.max(0, labs.length - 2)];
       if (!lab) return null;
+      const before = +document.querySelector('#span').value;
       lab.querySelector('input').click();
-      return {key: lab.textContent.trim()};
+      return {key: lab.textContent.trim(), before};
     })()""")
     time.sleep(0.4)
     hover_stage(s, 0.5, 0.5)
@@ -516,13 +538,20 @@ def report_slider(r: dict) -> bool:
         print("    ！没找到档位键，反向同步没测到")
         good = False
     else:
-        print("    反向：按档位「%s」→ 滑块 %s/1000，读数 %s%s"
-              % (rev["key"], rev["pos"], rev["label"],
+        same = "before" in rev and rev["pos"] == rev["before"]
+        moved = ("滑块从 %s 挪到 %s" % (rev["before"], rev["pos"])
+                 if "before" in rev else "滑块 %s/1000" % rev["pos"])
+        print("    反向：按档位「%s」→ %s，读数 %s%s"
+              % (rev["key"], moved, rev["label"],
                  "" if (rev["on"] is not None and rev["lit"]) else "   ！没同步上"))
         if rev["on"] is None or not rev["lit"]:
             good = False
-        if not (0 < rev["pos"] < 1000):
-            print("    ！按了档位键滑块却没挪窝（还在端点）")
+        if same:
+            # 判据是「挪了没有」，**不是**「落没落在中间」。
+            # 小图的档位键本来就只剩两档，一左一右正好各占一个端点 ——
+            # 实测 160×120 那张：1:1 → 位置 0，2:1 → 位置 1000，根本不存在中间值。
+            # 拿"必须是中间值"当判据，会把这台机器上的正常行为判成失败（踩过）。
+            print("    ！按了档位键滑块却没挪窝（还停在 %s）" % rev["pos"])
             good = False
     return good
 
@@ -699,9 +728,11 @@ def main():
             json.dump(report, f, ensure_ascii=False, indent=2)
     print("\n产物目录：" + SHOTS)
     if errors:
-        print("！有 JS 报错的页面：" + "、".join(errors))
+        # 这里装的是「页面自检没过」和「探针断言没过」两类，不全是 JS 报错 ——
+        # 以前一律打成"有 JS 报错的页面"，查起来会跑偏（找了一圈报错，其实是断言在抗议）。
+        print("！这些没过（页面自检 / 探针断言）：" + "、".join(errors))
         return 2
-    print("页面自检：全程没有 JS 报错")
+    print("页面自检：全程没有 JS 报错，探针断言也都过了")
     return 0
 
 

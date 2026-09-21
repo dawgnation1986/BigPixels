@@ -99,8 +99,10 @@ def main():
     st, fb, _ = get(base + "/fonts/archivo-700.woff2")
     check(st == 200 and fb[:4] == b"wOF2", "字体文件是合法 woff2",
           f"{len(fb)} bytes")
-    # 用百分号编码的 ../ 才测得到服务端 —— 客户端会把明文 /../ 直接归一化掉
-    st, _, _ = get(base + "/fonts/%2e%2e%2f%2e%2e%2fupscale.py")
+    # 用百分号编码的 ../ 才测得到服务端 —— 客户端会把明文 /../ 直接归一化掉。
+    # 穿越目标挑一个**真实存在**的文件：就算哪天防穿越写漏了，404 也不会因为
+    # 「那个文件本来就不在」而假通过（tools/upscale.py 是真的在那个位置）。
+    st, _, _ = get(base + "/fonts/%2e%2e%2f%2e%2e%2ftools%2fupscale.py")
     check(st == 404, "静态路由挡住目录穿越", f"HTTP {st}")
     st, _, _ = get(base + "/fonts/manifest.txt")
     check(st == 404, "静态路由挡住非白名单后缀", f"HTTP {st}")
@@ -130,6 +132,9 @@ def main():
           "所有预设权重齐备",
           ", ".join(f"{p['id']}:{p['have']}/{p['total']}" for p in cfg["presets"]))
     check(len(cfg["samples"]) >= 3, "示例图", ", ".join(s["id"] for s in cfg["samples"]))
+    check([x["id"] for x in cfg.get("bright", [])] == ["off", "lift"],
+          "明暗档：默认原样 / 可切提亮",
+          ", ".join(f"{x['id']}={x['label']}" for x in cfg.get("bright", [])))
     check(isinstance(cfg["device_probe"], dict), "设备自检结论已读", str(cfg["device_probe"]))
 
     # 3. 真跑一个任务
@@ -191,6 +196,21 @@ def main():
               f"24×24 -> {_out.shape[1]}×{_out.shape[0]}")
     except Exception as e:                                  # noqa: BLE001
         check(False, "库接口 app.core.upscale 能跑", f"{type(e).__name__}: {e}")
+
+    # 4c. 明暗开关真的乘进去了没有（不是「界面上多了个按钮」就算数）
+    #     用平坦输入，输出应该严格按倍率走；倍率对不上就是开关没接到引擎上。
+    try:
+        import app.core as _U
+        _flat = np.full((24, 24, 3), 0.5, np.float32)
+        _off = _U.upscale(_flat, "anime", 2, denoise="none", device="cpu",
+                          tile=64, clear="soft", bright="off")
+        _on = _U.upscale(_flat, "anime", 2, denoise="none", device="cpu",
+                         tile=64, clear="soft", bright="lift")
+        _ratio = float(_on.mean() / max(_off.mean(), 1e-9))
+        check(abs(_ratio - 1.019) < 0.003, "明暗「提亮」= 整体 ×1.019",
+              f"实测 ×{_ratio:.4f}")
+    except Exception as e:                                  # noqa: BLE001
+        check(False, "明暗「提亮」= 整体 ×1.019", f"{type(e).__name__}: {e}")
 
     # 5. 三张产物都取得到，而且字节数跟记录一致
     for what, key, magic in (("input", "in_bytes", None),

@@ -6,8 +6,8 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from .imaging import unsharp
-from .presets import plan_passes, resolve_model, resolve_sharpen
+from .imaging import brighten, unsharp
+from .presets import plan_passes, resolve_bright, resolve_model, resolve_sharpen
 from .runner import SRRunner
 
 
@@ -22,8 +22,8 @@ def build_runner(preset: str, scale: int, denoise: str = "medium", device: str =
 
 def upscale(rgb: np.ndarray, preset: str, scale: int, denoise: str = "medium",
             device: str = "auto", tile: int = 256, overlap: int = 16,
-            clear: str | float = "normal", on_stage=None,
-            runner: SRRunner | None = None) -> np.ndarray:
+            clear: str | float = "normal", bright: str | float = "off",
+            on_stage=None, runner: SRRunner | None = None) -> np.ndarray:
     runner = runner or build_runner(preset, scale, denoise, device, tile, overlap)
     passes, net_scale = plan_passes(scale, runner.scale)
     cur = rgb
@@ -40,6 +40,12 @@ def upscale(rgb: np.ndarray, preset: str, scale: int, denoise: str = "medium",
         if on_stage:
             on_stage(f"收尾锐化 · 半径 {radius}px 增益 {gain:.2f}", passes, passes)
         cur = unsharp(cur, radius, gain)
+    # 明暗开关放在最后：它是纯观感调整，不该影响上面任何一步的判断。
+    k = resolve_bright(bright)
+    if abs(k - 1.0) > 1e-9:
+        if on_stage:
+            on_stage(f"明暗 · 整体 ×{k:.3f}", passes, passes)
+        cur = brighten(cur, k)
     return cur
 
 

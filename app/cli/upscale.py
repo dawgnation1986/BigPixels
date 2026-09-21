@@ -17,11 +17,11 @@
     core/paths.py     项目里所有路径的唯一出处
 
 用法示例：
-    python upscale.py in.jpg -o out.png --preset art --denoise medium --scale 4
-    python upscale.py in.jpg -o out.png --clear crisp        # 线条更硬，接近线上那种观感
-    python upscale.py D:\\pics -o D:\\out --preset photo --scale 2
-    python upscale.py --list
-    python upscale.py --info
+    python tools/upscale.py in.jpg -o out.png --preset art --denoise medium --scale 4
+    python tools/upscale.py in.jpg -o out.png --clear crisp        # 线条更硬，接近线上那种观感
+    python tools/upscale.py D:\\pics -o D:\\out --preset photo --scale 2
+    python tools/upscale.py --list
+    python tools/upscale.py --info
 """
 from __future__ import annotations
 
@@ -40,9 +40,9 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from app.core import (                     # noqa: E402
-    CLEAR_LEVELS, DENOISE_LEVELS, MODEL_DIR, PRESETS, SRRunner,
-    load_image, ort, plan_passes, resolve_model, resolve_sharpen,
-    save_image, unsharp, upscale_alpha,
+    BRIGHT_LEVELS, CLEAR_LEVELS, DENOISE_LEVELS, MODEL_DIR, PRESETS, SRRunner,
+    brighten, load_image, ort, plan_passes, resolve_bright, resolve_model,
+    resolve_sharpen, save_image, unsharp, upscale_alpha,
 )
 
 
@@ -81,7 +81,7 @@ def _print_info():
                 print(f"  {sz/1048576:7.2f}MB  {f}")
         print(f"  合计 {tot/1048576:.1f}MB")
     else:
-        print("  （还没下载，运行 python download_models.py）")
+        print("  （还没下载，运行 python tools/download_models.py）")
 
 
 def main(argv=None):
@@ -93,6 +93,10 @@ def main(argv=None):
     ap.add_argument("--denoise", default="medium", help="降噪程度：" + "/".join(DENOISE_LEVELS))
     ap.add_argument("--clear", default="normal",
                     help="清晰度（收尾锐化）：" + "/".join(CLEAR_LEVELS) + "，也可直接给增益数字")
+    ap.add_argument("--bright", default="off",
+                    help="明暗：" + "/".join(BRIGHT_LEVELS)
+                         + "。lift = 整体 ×1.019，换线上那种通透观感，代价是偏离原图一点；"
+                           "也可直接给乘数数字")
     ap.add_argument("--tile", type=int, default=256, help="瓦片边长（显存不够就调小）")
     ap.add_argument("--overlap", type=int, default=16, help="瓦片重叠像素")
     ap.add_argument("--device", default="auto", choices=["auto", "dml", "cpu"])
@@ -109,6 +113,13 @@ def main(argv=None):
         except ValueError:
             raise SystemExit(f"未知清晰度 '{args.clear}'，可选：{', '.join(CLEAR_LEVELS)}，或直接给数字（如 2.5）")
 
+    # --bright 同理：允许直接给乘数
+    if args.bright not in BRIGHT_LEVELS:
+        try:
+            args.bright = float(args.bright)
+        except ValueError:
+            raise SystemExit(f"未知明暗 '{args.bright}'，可选：{', '.join(BRIGHT_LEVELS)}，或直接给乘数（如 1.03）")
+
     if args.list:
         for k, v in PRESETS.items():
             print(f"{k:8s} ~{v['hint']}x  {v['desc']}  ({v.get('tech', '')})")
@@ -118,6 +129,9 @@ def main(argv=None):
             print("          清晰度 标准 -> 半径 %.1fpx / 增益 %.2f" % (r, g))
         print("\n清晰度档位：" + " / ".join(
             f"{k}(×{v:g})" for k, v in CLEAR_LEVELS.items()))
+        print("明暗档位：" + " / ".join(
+            f"{k}(×{v:g})" for k, v in BRIGHT_LEVELS.items())
+            + " —— 默认原样最贴原图，lift 是线上那种通透感（会偏离原图一点）")
         return
     if args.info:
         _print_info()
@@ -149,6 +163,9 @@ def main(argv=None):
     _r, _g = resolve_sharpen(args.preset, args.clear)
     _label = args.clear if isinstance(args.clear, str) else "自定义"
     print(f"  清晰度 {_label}（锐化半径 {_r}px · 增益 {_g:.2f}）")
+    _b = resolve_bright(args.bright)
+    _blabel = args.bright if isinstance(args.bright, str) else "自定义"
+    print(f"  明暗 {_blabel}（整体 ×{_b:.3f}）")
 
     for i, (f, out) in enumerate(targets, 1):
         rgb, alpha, mode = load_image(f)
@@ -178,6 +195,10 @@ def main(argv=None):
         if gain > 0:
             print(f"    收尾锐化 半径 {radius}px · 增益 {gain:.2f}")
             cur = unsharp(cur, radius, gain)
+        kb = resolve_bright(args.bright)
+        if abs(kb - 1.0) > 1e-9:
+            print(f"    明暗 整体 ×{kb:.3f}")
+            cur = brighten(cur, kb)
         save_image(cur, out, upscale_alpha(alpha, args.scale))
         print(f"    -> {out}  {cur.shape[1]}x{cur.shape[0]}  用时 {time.time()-t0:.1f}s")
 

@@ -19,22 +19,23 @@
 from __future__ import annotations
 
 from .imaging import (                    # noqa: F401
-    _gauss_blur, _gauss_kernel, load_image, save_image, unsharp,
+    _gauss_blur, _gauss_kernel, brighten, load_image, save_image, unsharp,
 )
 from .paths import (                      # noqa: F401
     CACHE_DIR, DEVICE_CACHE, MODEL_DIR, OUTPUT_DIR, ROOT, SAMPLE_DIR, WEB_DIR,
 )
 from .pipeline import build_runner, upscale, upscale_alpha   # noqa: F401
 from .presets import (                    # noqa: F401
-    CLEAR_LABELS, CLEAR_LEVELS, DENOISE_LEVELS, PRESETS,
-    plan_passes, resolve_model, resolve_sharpen,
+    BRIGHT_LABELS, BRIGHT_LEVELS, CLEAR_LABELS, CLEAR_LEVELS, DENOISE_LEVELS, PRESETS,
+    plan_passes, resolve_bright, resolve_model, resolve_sharpen,
 )
 from .runner import MIN_TILE, TILE_MULT, SRRunner, _is_nhwc, ort   # noqa: F401
 
 __all__ = [
     "ROOT", "MODEL_DIR", "DEVICE_CACHE", "OUTPUT_DIR", "WEB_DIR", "SAMPLE_DIR", "CACHE_DIR",
     "PRESETS", "DENOISE_LEVELS", "CLEAR_LEVELS", "CLEAR_LABELS",
-    "resolve_model", "plan_passes", "resolve_sharpen",
-    "load_image", "save_image", "unsharp", "SRRunner", "ort",
+    "BRIGHT_LEVELS", "BRIGHT_LABELS",
+    "resolve_model", "plan_passes", "resolve_sharpen", "resolve_bright",
+    "load_image", "save_image", "unsharp", "brighten", "SRRunner", "ort",
     "build_runner", "upscale", "upscale_alpha",
 ]

@@ -92,7 +92,14 @@
           想要线上那种硬线条就选「更锐」。</p>
       </div>
 
-      <div class="grp reveal" style="--d:.2s">
+      <div class="grp reveal" id="brightGrp" style="--d:.2s">
+        <div class="eyebrow"><span>6 明暗</span><i></i></div>
+        <div class="seg" id="bright" data-kind="opt" role="radiogroup" aria-label="明暗"></div>
+        <p class="hint">默认不动明暗，那样最贴原图。想要线上那种通透感就选「提亮」——
+          它整体提亮约 2%；代价是比原图亮一点，算不上更「还原」。</p>
+      </div>
+
+      <div class="grp reveal" style="--d:.22s">
         <button class="go" id="go" type="button" disabled>开始放大</button>
         <div class="prog" id="prog" hidden>
           <div class="rule" role="progressbar" aria-labelledby="progStage"

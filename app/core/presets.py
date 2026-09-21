@@ -107,6 +107,14 @@ DENOISE_LEVELS = {"none": 0, "low": 1, "medium": 2, "high": 3, "highest": 3}
 CLEAR_LEVELS = {"soft": 0.0, "normal": 1.0, "crisp": 1.5}
 CLEAR_LABELS = {"soft": "原样", "normal": "标准", "crisp": "更锐"}
 
+# 明暗档：本质是个开关，只有「原样 / 提亮」两档。
+# 1.019 是量出来的，不是拍的 —— 线上 bigjpg 卡通/插画 4x 的平坦区拟合下来是
+# 乘法增益 ×1.0192（亮部 +4.8 灰阶、中间调 +1.1）。三种拟合里乘法残差最小。
+# 说清楚代价：这一档会让输出**更不像原图**（对原图 PSNR 会掉），
+# 换的是「线上那种通透观感」。默认关。
+BRIGHT_LEVELS = {"off": 1.0, "lift": 1.019}
+BRIGHT_LABELS = {"off": "原样", "lift": "提亮"}
+
 
 def resolve_model(preset: str, denoise: str, scale: int = 2) -> str:
     if preset not in PRESETS:
@@ -130,7 +138,7 @@ def resolve_model(preset: str, denoise: str, scale: int = 2) -> str:
         idx = max(p["noise"])
     path = os.path.join(MODEL_DIR, p["noise"][idx])
     if not os.path.isfile(path):
-        raise SystemExit(f"模型文件不存在：{path}\n请先运行 python download_models.py")
+        raise SystemExit(f"模型文件不存在：{path}\n请先运行 python tools/download_models.py")
     return path
 
 
@@ -164,3 +172,14 @@ def resolve_sharpen(preset: str, clear: str | float) -> tuple[float, float]:
     return radius, gain
 
 
+def resolve_bright(bright: str | float) -> float:
+    """明暗档 -> 乘数。传数字就是直接指定乘数。
+
+    这一档跟预设无关（是个全局的观感开关），所以不需要 preset 参数。
+    """
+    if isinstance(bright, (int, float)):
+        return float(bright)
+    f = BRIGHT_LEVELS.get(bright)
+    if f is None:
+        raise SystemExit(f"未知明暗档 '{bright}'，可选：{', '.join(BRIGHT_LEVELS)}")
+    return f

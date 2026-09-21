@@ -53,7 +53,7 @@ const S = {
   result: null,
   timer: null,
   ticks: 0,
-  sel: {preset: "anime", scale: 4, denoise: "medium", clear: "normal", tile: 256},
+  sel: {preset: "anime", scale: 4, denoise: "medium", clear: "normal", bright: "off", tile: 256},
   split: 50,
   zoom: 1,
   zoomOn: null,     // 当前选中的预设档（拖过滑块就是 null —— 这时没有哪个档位被选中）
@@ -416,6 +416,19 @@ function clearLabel(id) {
   return it ? it.label : id;
 }
 
+/* 明暗：一个开关，不是技术参数 —— 默认「原样」最贴原图，
+   「提亮」整体乘 1.019，换线上 bigjpg 那种通透感。 */
+function renderBright(c) {
+  if (!c.bright) return;
+  radioGroup($("#bright"), "bright", c.bright, S.sel.bright,
+    it => it.label, id => { S.sel.bright = id; });
+}
+
+function brightLabel(id) {
+  const it = (S.cfg && S.cfg.bright || []).find(x => x.id === id);
+  return it ? it.label : id;
+}
+
 /* 档位是「想要的倍率」，实际能放出多大还要看图片尺寸和取块边长上限 ——
    一格装不下的区域服务端不肯给。所以标签按实际能做到的倍率写。 */
 /* 一格能装下多大一块，是被两头夹住的：
@@ -588,6 +601,7 @@ async function start() {
     const blob = await sourceBlob();
     const q = new URLSearchParams({preset: S.sel.preset, scale: S.sel.scale,
                                   denoise: S.sel.denoise, clear: S.sel.clear,
+                                  bright: S.sel.bright,
                                   tile: S.sel.tile, name: S.src.name});
     const r = await fetch("/api/job?" + q, {method: "POST", body: blob});
     const j = await r.json().catch(async () => ({error: await r.text()}));
@@ -1029,6 +1043,11 @@ function renderLedger(j) {
     row("清晰度", clearLabel(j.clear || "normal") +
         U(j.sharp_amount ? " · 收尾锐化 半径 " + j.sharp_radius + " px / 增益 " + j.sharp_amount : ""),
         j.sharp_amount ? "网络出来的边是渐变过渡，这一步只把边缘收回来；平坦区不动，所以不会磨出噪点。" : "这一档没做任何锐化，输出就是网络的原始结果。") +
+    row("明暗", brightLabel(j.bright || "off") +
+        U(j.bright_factor && j.bright_factor !== 1 ? " · 整体 ×" + j.bright_factor : ""),
+        j.bright_factor && j.bright_factor !== 1
+          ? "这一步会让输出比原图亮一点 —— 换的是线上那种通透观感，不是更还原。想最贴原图就切回「原样」。"
+          : "没动明暗，输出跟原图一个亮度。") +
     row("后端", (j.device || "—") + U(" · 分块 " + num(j.tile, v => v) + " px")) +
     row("权重", String(j.model || "").replace(/\.onnx$/, "") || "—", null, true);
 
@@ -1080,11 +1099,13 @@ function restoreJob(id) {
         if (S.cfg.presets.some(p => p.id === j.preset)) S.sel.preset = j.preset;
         if (j.denoise) S.sel.denoise = j.denoise;
         if (j.clear && (S.cfg.clear || []).some(x => x.id === j.clear)) S.sel.clear = j.clear;
+        if (j.bright && (S.cfg.bright || []).some(x => x.id === j.bright)) S.sel.bright = j.bright;
         if (S.cfg.tiles.includes(j.tile)) S.sel.tile = j.tile;
         renderPresets(S.cfg);
         renderScales(S.cfg);
         renderDenoise(S.cfg);
         renderClear(S.cfg);
+        renderBright(S.cfg);
         $("#tile").value = S.sel.tile;
       }
       setSource({url: "/api/job/" + j.id + "/input", name: j.name, w: j.in_w, h: j.in_h});
@@ -1111,6 +1132,7 @@ function restoreJob(id) {
       renderScales(c);
       renderDenoise(c);
       renderClear(c);
+      renderBright(c);
       renderTiles(c);
       renderSamples(c);
       renderKeep((c.settings || {}).keep !== false);
