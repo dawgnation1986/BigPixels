@@ -3,9 +3,9 @@
 """
 网页服务自检：起一个真任务，把新接口和指标全跑一遍。
 
-    python web/smoke.py                 # 默认打 http://127.0.0.1:8765
-    python web/smoke.py --port 9000 --preset esrgan --scale 4
-    python web/smoke.py --src .cache/test/mid_input.png --scale 4
+    python app/qa/smoke.py                 # 默认打 http://127.0.0.1:8765
+    python app/qa/smoke.py --port 9000 --preset esrgan --scale 4
+    python app/qa/smoke.py --src .cache/test/mid_input.png --scale 4
                                         # 源图够大时才会走到「预切块」那条路
 
 断言的是接口契约和数值合理性（尺寸、指标范围、取块是否真像素），
@@ -29,7 +29,7 @@ from io import BytesIO
 import numpy as np
 from PIL import Image
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEMO = os.path.join(ROOT, "web", "demo")
 
 
@@ -131,7 +131,7 @@ def main():
     # 3. 真跑一个任务
     src = a.src or os.path.join(DEMO, a.demo)
     if not os.path.isfile(src):
-        print(f"  ! 找不到源图 {src}，先跑 web/make_demo.py")
+        print(f"  ! 找不到源图 {src}，先跑 app/tools/make_demo.py")
         return 1
     with open(src, "rb") as f:
         data = f.read()
@@ -295,8 +295,9 @@ def main():
     check(not flat, "outputs/web 根下没有散文件了", str(flat[:4]))
 
     # 迁移是幂等的：再喊一次不该再搬东西
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import server as S                                            # noqa: E402
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
+    import app.server.server as S                                 # noqa: E402
     again = S.migrate_layout()
     check(again["runs"] == 0, "旧版归档是幂等的（再跑一遍一无所获）", str(again))
 

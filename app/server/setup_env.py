@@ -5,11 +5,11 @@ BigPixels 放大台 · 把运行环境备好（虚拟环境 + 依赖）
 
 双击启动脚本第一步就会调它。单独跑也行：
 
-    python web/setup_env.py                   # 缺什么补什么（已经好了就一句话带过）
-    python web/setup_env.py --check           # 只检查，不动手
-    python web/setup_env.py --no-deps         # 只建虚拟环境，不装依赖
-    python web/setup_env.py --venv .venv-gpu  # 换个环境目录
-    python web/setup_env.py --requirements req-gpu.txt
+    python app/server/setup_env.py                   # 缺什么补什么（已经好了就一句话带过）
+    python app/server/setup_env.py --check           # 只检查，不动手
+    python app/server/setup_env.py --no-deps         # 只建虚拟环境，不装依赖
+    python app/server/setup_env.py --venv .venv-gpu  # 换个环境目录
+    python app/server/setup_env.py --requirements req-gpu.txt
                                               # 换一份依赖清单（比如换 onnxruntime-gpu）
 
 退出码：0 好了 / 1 没弄好 / 2 参数或环境有问题
@@ -26,7 +26,7 @@ import os
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEFAULT_VENV = os.path.join(ROOT, ".venv")
 DEFAULT_REQ = os.path.join(ROOT, "requirements.txt")
 

@@ -12,14 +12,14 @@ import sys
 import time
 import tracemalloc
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.join(ROOT, "web"))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 import numpy as np                      # noqa: E402
 from PIL import Image                   # noqa: E402
-import server as S                      # noqa: E402
-import metrics as M                     # noqa: E402
+import app.server.server as S                      # noqa: E402
+import app.core.metrics as M                     # noqa: E402
 
 SCALE = int(sys.argv[1]) if len(sys.argv) > 1 else 4
 SRC = os.path.join(ROOT, "web", "demo", "grain.png")

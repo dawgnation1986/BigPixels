@@ -6,7 +6,7 @@
 为什么不用现成的：这个环境里没有 websocket 客户端，而为了「拍一张全屏版的图」
 「量一下鼠标拖动到底掉不掉帧」去装一个依赖不划算 —— CDP 的线协议就那么点东西。
 
-    from cdp import Session
+    from app.qa.cdp import Session
     with Session("http://127.0.0.1:8765/", size=(1440, 1180)) as s:
         s.wait_ready()
         s.shot("out.png")
@@ -25,6 +25,13 @@ import struct
 import subprocess
 import time
 import urllib.request
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from app.core.paths import CACHE_DIR    # noqa: E402
 
 BROWSERS = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -135,8 +142,7 @@ class Session:
     def __init__(self, url: str, size=(1440, 1180), profile: str | None = None,
                  headless: bool = True):
         self.port = _free_port()
-        self.profile = profile or os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", ".cache", "cdp-profile")
+        self.profile = profile or os.path.join(CACHE_DIR, "cdp-profile")
         self.profile = os.path.abspath(self.profile)
         os.makedirs(self.profile, exist_ok=True)
         args = [find_browser(), "--user-data-dir=" + self.profile,

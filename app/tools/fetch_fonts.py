@@ -4,8 +4,8 @@
 把界面用到的三款字体（Archivo / IBM Plex Sans / IBM Plex Mono）抓成本地 woff2，
 放进 web/fonts/，这样页面离线可用、不依赖任何 CDN。
 
-    python web/fetch_fonts.py            # 缺什么抓什么
-    python web/fetch_fonts.py --force    # 全部重抓（换字体时用）
+    python app/tools/fetch_fonts.py            # 缺什么抓什么
+    python app/tools/fetch_fonts.py --force    # 全部重抓（换字体时用）
 
 只抓 latin 子集：界面正文是中文，交给系统字体渲染；拉丁字面只需要覆盖
 数字、单位（×  · dB）、模型名和标题。
@@ -25,8 +25,12 @@ import re
 import urllib.parse
 import urllib.request
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-FONT_DIR = os.path.join(HERE, "fonts")
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from app.core.paths import WEB_DIR                                      # noqa: E402
+
+HERE = WEB_DIR
+FONT_DIR = os.path.join(WEB_DIR, "fonts")
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")

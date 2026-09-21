@@ -8,7 +8,7 @@
 #      ./start_web.sh --source hf   模型走 huggingface.co（默认走国内镜像）
 #
 #  和 Windows 那边一样，这里也只负责「找到一个能用的 Python 3.9+」，
-#  剩下三件事（环境 → 模型 → 服务）全交给 web/bootstrap.py。中文提示都在
+#  剩下三件事（环境 → 模型 → 服务）全交给 app/server/bootstrap.py。中文提示都在
 #  Python 里，脚本本身不输出任何东西 —— 两边行为保持一致，省得各改一遍。
 #
 #  第一次跑先给执行权限：  chmod +x start_web.sh
@@ -62,4 +62,4 @@ else
   exit 1
 fi
 
-exec "$RUNNER" web/bootstrap.py --port "$PORT" --venv "$VENV" "$@"
+exec "$RUNNER" app/server/bootstrap.py --port "$PORT" --venv "$VENV" "$@"

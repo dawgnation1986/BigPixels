@@ -3,8 +3,8 @@
 """
 BigPixels 本地版 —— 网页服务，跟 CLI 共用同一套推理引擎。
 
-    python web/server.py                  # http://127.0.0.1:8765
-    python web/server.py --port 9000
+    python app/server/server.py                  # http://127.0.0.1:8765
+    python app/server/server.py --port 9000
 
 接口
     GET  /                          界面
@@ -49,7 +49,7 @@ BigPixels 本地版 —— 网页服务，跟 CLI 共用同一套推理引擎。
      1024² 的 PNG 瓦片，取块时只读命中的那几块，一次请求几十毫秒。
 
 这三条都只碰「怎么算、怎么传」，不碰输出本身：下载到的永远是模型原生分辨率的
-无损 PNG，跟没做这些优化之前一个像素都不差（web/perf_probe.py 会当场验给你看）。
+无损 PNG，跟没做这些优化之前一个像素都不差（app/qa/perf_probe.py 会当场验给你看）。
 
 除了「输出多大、花了多久」，这里还老实算了三件事，界面上直接给人看：
     rt_ssim / rt_psnr  放大结果缩回原尺寸后跟原图的相似度 —— 衡量有没有把内容改跑
@@ -72,14 +72,14 @@ import webbrowser
 import http.server
 from io import BytesIO
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
 try:
     import numpy as np                  # noqa: E402
     from PIL import Image               # noqa: E402
-    import upscale as U                 # noqa: E402
-    import metrics as M                 # noqa: E402
+    import app.core as U                # noqa: E402  引擎内核（app/core）
+    import app.core.metrics as M        # noqa: E402  指标只此一份
 except ImportError as e:                # 依赖没装齐时给一句人话，别甩 traceback
     sys.exit(f"缺依赖：{e}\n先装一遍：pip install -r requirements.txt")
 
@@ -1261,7 +1261,7 @@ def main():
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--keep", choices=("1", "0"), default=None,
                     help="覆盖设置：1 保存结果（默认），0 暂存")
     ap.add_argument("--open", dest="open_browser", action="store_true",
@@ -1299,7 +1299,7 @@ def main():
     try:
         srv = http.server.ThreadingHTTPServer((a.host, a.port), Handler)
     except OSError as e:
-        sys.exit(f"端口 {a.port} 起不来：{e}\n换个端口：python web/server.py --port 8766")
+        sys.exit(f"端口 {a.port} 起不来：{e}\n换个端口：python app/server/server.py --port 8766")
     srv.daemon_threads = True
 
     if a.open_browser:

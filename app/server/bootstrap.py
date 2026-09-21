@@ -5,11 +5,11 @@ BigPixels 放大台 · 一键启动
 
 双击 start_web.bat / start_web.sh 跑的就是它。单独跑也行：
 
-    python web/bootstrap.py                # 环境 → 模型 → 起服务并开浏览器
-    python web/bootstrap.py --check        # 只自检（环境 + 模型），不装不下不起服务
-    python web/bootstrap.py --no-open      # 起服务但不自动开浏览器
-    python web/bootstrap.py --port 8766    # 换端口（默认 8765）
-    python web/bootstrap.py --source hf    # 模型走 huggingface.co（默认走国内 hf-mirror）
+    python app/server/bootstrap.py                # 环境 → 模型 → 起服务并开浏览器
+    python app/server/bootstrap.py --check        # 只自检（环境 + 模型），不装不下不起服务
+    python app/server/bootstrap.py --no-open      # 起服务但不自动开浏览器
+    python app/server/bootstrap.py --port 8766    # 换端口（默认 8765）
+    python app/server/bootstrap.py --source hf    # 模型走 huggingface.co（默认走国内 hf-mirror）
 
 退出码：0 跑通了 / 1 中间某步没成 / 2 参数不对
 
@@ -25,9 +25,9 @@ BigPixels 放大台 · 一键启动
 端口被占怎么说），于是有了这个文件。.bat 和 .sh 因此都缩成二十来行的壳。
 
 三步各自还有独立的入口，单独调也行：
-    1/3  web/setup_env.py       虚拟环境 + 依赖
-    2/3  download_models.py     15 个权重，缺什么下什么
-    3/3  web/server.py          网页服务
+    1/3  app/server/setup_env.py          虚拟环境 + 依赖
+    2/3  app/tools/download_models.py     15 个权重，缺什么下什么
+    3/3  app/server/server.py             网页服务
 ------------------------------------------------------------------------------
 """
 from __future__ import annotations
@@ -38,7 +38,7 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+ROOT = os.path.dirname(os.path.dirname(HERE))      # app/server -> app -> 项目根
 
 SETUP = os.path.join(HERE, "setup_env.py")
 MODELS = os.path.join(ROOT, "download_models.py")

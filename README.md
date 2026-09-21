@@ -50,8 +50,8 @@ python -m venv .venv
 python download_models.py        # 下权重（约 292 MB，走 hf-mirror）
 python upscale.py 图片.jpg -o 输出.png --preset art --scale 4    # 命令行单张
 
-python web/bootstrap.py          # 上面那两个脚本干的事：环境 → 模型 → 起服务
-python web/bootstrap.py --check  # 只自检（环境 + 模型），不装不下不起服务
+python app/server/bootstrap.py          # 上面那两个脚本干的事：环境 → 模型 → 起服务
+python app/server/bootstrap.py --check  # 只自检（环境 + 模型），不装不下不起服务
 ```
 
 网页版起来后是 http://127.0.0.1:8765（换端口：`--port 8766`，或改 `start_web.bat` 顶部那行）。
@@ -68,6 +68,9 @@ python web/bootstrap.py --check  # 只自检（环境 + 模型），不装不下
 :: 整个目录批量
 .venv\Scripts\python.exe upscale.py D:\pics -o D:\out --preset esrgan --scale 4
 
+:: 要更硬的线（和 bigjpg 那种一样）：加 --clear crisp
+.venv\Scripts\python.exe upscale.py in.png -o out.png --preset art --scale 4 --clear crisp
+
 :: 顺便出一张双三次插值对照图
 .venv\Scripts\python.exe upscale.py in.png --compare
 
@@ -81,26 +84,42 @@ python web/bootstrap.py --check  # 只自检（环境 + 模型），不装不下
 | `--preset` | `art` / `art-hd` / `photo` / `esrgan` / `anime` | 图片类型，决定用哪族权重 |
 | `--scale` | `2` `4` `8` `16` | 目标倍率，不足/超出由网络串联 + Lanczos 收尾补齐 |
 | `--denoise` | `none` `low` `medium` `high` `highest` | 降噪档，本质是不同训练噪声水平的权重 |
+| `--clear` | `soft` `normal` `crisp` | 收尾清晰度。网络出来的是渐变边，这一档决定要不要把它们压回硬边（见下） |
 | `--tile` | 默认 256 | 瓦片边长，显存不够就调小 |
 | `--device` | `auto` / `dml` / `cpu` | 推理后端 |
 
 ## 网页版（`web/`）
 
-双击 `start_web.bat`，或 `.venv\Scripts\python.exe web\server.py --port 8765`，浏览器开 http://127.0.0.1:8765。
+双击 `start_web.bat`，或 `.venv\Scripts\python.exe app\server\server.py --port 8765`，浏览器开 http://127.0.0.1:8765。
 
 页面本身分成三份：`web/index.html` 只留骨架，版式在 `web/css/app.css`，行为在 `web/js/app.js`，
 服务端按 `/css/` 和 `/js/` 两个前缀把这俩发出去（后缀白名单 + 目录穿越拦截跟 `/fonts/` 同一套）。
 分开只是为了改的时候不用在两千行里翻一段 `<script>`；**没有构建步骤**，
 改完刷新页面就是新的（这两个前缀故意报 `no-store`，免得看到上一版还以为改坏了）。
 
-页面按 bigjpg 的思路做，四步选完就能出结果：
+页面按 bigjpg 的思路做，五步选完就能出结果：
 
 1. **选图** —— 拖进来，或点左边的示例（三张合成样图：线稿 / 小字截图 / 噪点照片）。
 2. **这是什么图** —— 五个预设，各带一句人话说明。
 3. **放大多少倍** —— 2× / 4× / 8× / 16×，下面**当场算出输出尺寸**（`360 × 240 → 1,440 × 960`）。
 4. **要不要降噪** —— 关 / 低 / 中 / 高 / 最高。
+5. **线条要多清楚** —— 原样 / 标准 / 更锐。
 
 至于分块边长、推理后端、权重清单这些，全在「更多设置与引擎信息」里收着，不挡路。
+
+### 为什么同参数下会比 bigjpg 糊
+
+网络（waifu2x / Real-ESRGAN 这一族）出的是**渐变边**：原图里一根 1 px 的黑线，网络会把它铺成
+4~7 px 的灰带 —— 看着"平滑"，其实糊。bigjpg 那边是**硬边**（2~3 px 说断就断）。
+拿拉普拉斯方差量一下就是：同一张图，本地默认档 100 上下，bigjpg 那版 913。
+这跟参数、降噪档都没关系（降噪档越高反而越锐，全试遍了也就到人家的三成）。
+
+所以引擎在**网络之后**加了一道**收尾锐化**（unsharp mask，半径 2 左右、增益按预设给）：
+把渐变边拉回硬边。调完 art 标准档 517、更锐档 896，anime 更锐档 1099 —— 跟 bigjpg 那版一个量级了。
+关键是不能**凭空造噪**：判据是「最平的那 1% 块的标准差」还得是 `0.00`（大色块里不能冒出麻点），
+这几档都守住了。**原样**档就是关掉这道工序，跟老版本逐像素一致。
+
+一句话：`--clear crisp` 是"要接近 bigjpg 观感"，`--clear soft` 是"要模型原味"。两个都留着，不替用户决定。
 
 出结果后：
 
@@ -168,7 +187,7 @@ outputs/web/20260920-191402_SharkGirl_843x1264_e3c72086d0a7/
 
 ### 启动自检
 
-`web/server.py` 一起来先把该点的东西点一遍，缺什么直接说：
+`app/server/server.py` 一起来先把该点的东西点一遍，缺什么直接说：
 
 ```
 BigPixels 本地版已启动： http://127.0.0.1:8765
@@ -180,7 +199,7 @@ BigPixels 本地版已启动： http://127.0.0.1:8765
 ```
 
 权重不全的时候会把缺的那几个列出来（哪个文件、现在多少字节、应该是多少）。
-双击启动那条路会**自动去下**；单独跑 `web/server.py` 的话它会提示你去跑
+双击启动那条路会**自动去下**；单独跑 `app/server/server.py` 的话它会提示你去跑
 `python download_models.py`（走 hf-mirror 镜像；慢或者连不上就先开代理再跑）。
 页面上同时顶一条提示，并且自动把预设落到还能用的那一档，免得按下去才发现没权重。
 
@@ -195,7 +214,7 @@ BigPixels 本地版已启动： http://127.0.0.1:8765
 | GET | `/fonts/<file>`、`/demo/<file>` | 自托管字体与示例图（做了路径穿越防护 + 后缀白名单） |
 | GET | `/api/presets` | 预设、降噪档、倍率、分块档、示例图、模型自检、工程目录、磁盘占用、当前设置 |
 | GET | `/api/settings` · POST `?keep=1\|0` | 读 / 改「保存 · 暂存」 |
-| POST | `/api/job?preset=&scale=&denoise=&tile=&name=` | 请求体直接是图片二进制，返回 `{id}` |
+| POST | `/api/job?preset=&scale=&denoise=&clear=&tile=&name=` | 请求体直接是图片二进制，返回 `{id}` |
 | GET | `/api/job/<id>` | 进度、阶段、耗时、指标、工程目录（`tiled` 说明哪几层预切了块） |
 | GET | `/api/job/<id>/input` · `/baseline` · `/result` | 原图 / 双三次基线 / AI 结果（都是 PNG） |
 | GET | `/api/job/<id>/result?view=1` | 缩略预览（最长边 1600 px），**光台只碰这个** |
@@ -210,23 +229,23 @@ BigPixels 本地版已启动： http://127.0.0.1:8765
 ### 网页相关的脚本
 
 ```bat
-.venv\Scripts\python.exe web\fetch_fonts.py --force   :: 抓 Archivo + IBM Plex 到 web/fonts/
-.venv\Scripts\python.exe web\make_demo.py             :: 生成三张示例图
-.venv\Scripts\python.exe web\smoke.py                 :: 接口自检（69 项，含真跑一个任务 + 取块逐像素核对
+.venv\Scripts\python.exe app\tools\fetch_fonts.py --force   :: 抓 Archivo + IBM Plex 到 web/fonts/
+.venv\Scripts\python.exe app\tools\make_demo.py             :: 生成三张示例图
+.venv\Scripts\python.exe app\qa\smoke.py                 :: 接口自检（69 项，含真跑一个任务 + 取块逐像素核对
                                                       ::   + 工程目录布局 + 暂存清空的安全边界 + 设置读写
                                                       ::   + 模型自检 + 迁移幂等 + 删除接口
                                                       ::   + /css/ /js/ 的类型和穿越拦截；跑完自己收尾）
-.venv\Scripts\python.exe web\smoke.py --src 大图.png --scale 4   :: 源图够大才会走到「预切块」那条路
-.venv\Scripts\python.exe web\perf_probe.py 8 843x1264  :: 画质/内存对照（只插值中心块 vs 整幅，验逐像素一致）
-.venv\Scripts\python.exe web\shots.py                 :: 截图（空态 / 示例 / 结果 / 放大镜 / 全屏 / 深色）
-.venv\Scripts\python.exe web\shots.py --job <id> --probe  :: 再量三件事：放大镜跟不跟手、
+.venv\Scripts\python.exe app\qa\smoke.py --src 大图.png --scale 4   :: 源图够大才会走到「预切块」那条路
+.venv\Scripts\python.exe app\qa\perf_probe.py 8 843x1264  :: 画质/内存对照（只插值中心块 vs 整幅，验逐像素一致）
+.venv\Scripts\python.exe app\qa\shots.py                 :: 截图（空态 / 示例 / 结果 / 放大镜 / 全屏 / 深色）
+.venv\Scripts\python.exe app\qa\shots.py --job <id> --probe  :: 再量三件事：放大镜跟不跟手、
                                                           :: 框框会不会一路贴到画面边角、取景滑块两端拖不拖得动
                                                           :: （另外每次都判「光台和放大镜同不同屏」）
                                                           :: 想看 1920×1080 那种窗口自己加 --size 1920,1080
-.venv\Scripts\python.exe web\uistate.py <id>          :: 拍两个平时看不见的状态：暂存提醒 / 缺权重提示
+.venv\Scripts\python.exe app\qa\uistate.py <id>          :: 拍两个平时看不见的状态：暂存提醒 / 缺权重提示
 ```
 
-`web/cdp.py` 是个只用标准库写的 Chrome DevTools 客户端。之所以自己写：这个环境里没有 websocket 库，
+`app/qa/cdp.py` 是个只用标准库写的 Chrome DevTools 客户端。之所以自己写：这个环境里没有 websocket 库，
 而「真的要进一次全屏再拍」和「用真鼠标事件量掉不掉帧」这两件事，靠 `--screenshot` 那种一次性截图做不到。
 
 注意 `shots.py` 跑出来的全屏图默认按 `--fs-size 1920,1040` 拍：CDP 拉起来的浏览器**进不了真全屏**，
@@ -276,35 +295,67 @@ BigPixels 本地版已启动： http://127.0.0.1:8765
 
 ## 目录
 
+源码全部收在 `app/` 下，按职责分五个包。根目录只留几个薄壳脚本，让文档里
+写着的命令（`python upscale.py …`）照旧能用。
+
 ```
+app/core/            引擎内核 —— 不碰命令行、不碰 HTTP，谁都能 import
+
+  paths.py             项目里所有路径的唯一出处（ROOT / models / outputs / .cache）
+  presets.py           预设表、降噪档、清晰度档 → 权重文件和锐化参数的换算
+  runner.py            单个 ONNX 模型的瓦片式推理器
+                       （尺寸约定自适配 / 重叠羽化融合 / 后端数值自检）
+  pipeline.py          端到端：串联多次网络 + 收尾缩放 + 收尾锐化
+  imaging.py           读图 / 存图 / unsharp
+  metrics.py           PSNR / SSIM / 锐度 —— 离线评测和网页端共用同一份
+
+app/cli/             命令行
+
+  upscale.py           放大（python upscale.py …）
+  bench.py             跑评测，出 PSNR/SSIM 表和对比图
+
+app/server/          网页服务
+
+  bootstrap.py         一键启动的编排层：环境 → 模型 → 起服务（两个启动脚本都调它）
+  setup_env.py         建虚拟环境 + 装依赖（单独也能跑，带 --check 只自检）
+  server.py            本地网页服务（标准库，无第三方 Web 框架）
+
+app/tools/           资源与模型工具
+
+  download_models.py   权重自检 + 下载（清单精确到字节，断点续传，走 hf-mirror）
+  inspect_models.py    摸模型输入输出约定，排查问题时用
+  make_samples.py      生成测试图样（含高清标尺）
+  make_demo.py         生成首页示例图
+  fetch_fonts.py       把字体抓成本地 woff2
+
+app/qa/              自检与探针（都在真实浏览器/真实服务上跑）
+
+  smoke.py             接口自检（69 项）
+  cdp.py               只用标准库写的 Chrome DevTools 客户端
+  shots.py             截图 + 量交互（真进全屏、真鼠标事件、抓 JS 报错、量框框跟手）
+  perf_probe.py        画质/内存对照：只插值中心块 vs 整幅，验逐像素一致
+  uistate.py           渲染两个平时看不见的界面状态（暂存提醒 / 缺权重提示）
+  layout.py            量版式：右栏每一块的高度各占多少（下面"坑 10"就是拿它量出来的）
+  fitsfail.py          证明 shots.py 的「同屏」断言不是空转的（改回旧尺寸必须当场翻脸）
+
+web/                 只有前端静态资源，服务端按 /css/ /js/ 发出去
+
+  index.html           页面骨架（只留结构，一行样式/脚本都不内联）
+  css/app.css          版式
+  js/app.js            行为
+  fonts/               自托管字体（离线可用，运行时不碰 CDN）
+  demo/                首页三张示例图
+
 start_web.bat        双击启动（Windows）—— 只干一件事：找个 Python 再交给 bootstrap
 start_web.sh         双击启动（macOS / Linux），同上
 requirements.txt     依赖：numpy / pillow / onnxruntime（Windows 走 -directml 后端）
 
-download_models.py   权重自检 + 下载（清单精确到字节，断点续传，走 hf-mirror）
-upscale.py           推理引擎 + 命令行
-metrics.py           PSNR / SSIM / 锐度 —— 离线评测和网页端共用同一份
-make_samples.py      生成测试图样（含高清标尺）
-bench.py             跑评测，出 PSNR/SSIM 表和对比图
-inspect_models.py    摸模型输入输出约定，排查问题时用
-
-web/bootstrap.py     一键启动的编排层：环境 → 模型 → 起服务（两个启动脚本都调它）
-web/setup_env.py     建虚拟环境 + 装依赖（单独也能跑，带 --check 只自检）
-web/server.py        本地网页服务（标准库，无第三方 Web 框架）
-web/index.html       页面骨架（只留结构，一行样式/脚本都不内联）
-web/css/app.css      版式（服务端按 /css/ 发）
-web/js/app.js        行为（服务端按 /js/ 发）
-web/fetch_fonts.py   把字体抓成本地 woff2
-web/make_demo.py     生成首页示例图
-web/smoke.py         接口自检（69 项）
-web/cdp.py           只用标准库写的 Chrome DevTools 客户端
-web/shots.py         截图 + 量交互（真进全屏、真鼠标事件、抓 JS 报错、量框框跟手）
-web/perf_probe.py    画质/内存对照：只插值中心块 vs 整幅，验逐像素一致
-web/uistate.py       渲染两个平时看不见的界面状态（暂存提醒 / 缺权重提示）
-web/_layout.py       量版式：右栏每一块的高度各占多少（下面"坑 10"就是拿它量出来的）
-web/_fitsfail.py     证明 shots.py 的「同屏」断言不是空转的（改回旧尺寸必须当场翻脸）
-web/fonts/           自托管字体（离线可用，运行时不碰 CDN）
-web/demo/            首页三张示例图
+upscale.py           薄壳 → app/cli/upscale.py
+bench.py             ─┐
+download_models.py    │ 同样是薄壳，指向 app/ 下对应的模块。
+inspect_models.py     │ 留着是为了老的命令照旧能用，里面没有实现。
+make_samples.py       │
+metrics.py           ─┘
 
 models/              权重（292 MB，不进仓库，第一次启动自动下）
 samples/             测试素材
@@ -313,7 +364,7 @@ outputs/settings.json 保存 / 暂存 设置
 outputs/bench/       评测对比图、outputs/ui/ 界面截图
 ```
 
-## 十一个踩过的坑（值得知道）
+## 十二个踩过的坑（值得知道）
 
 **1. waifu2x 系模型不是"直出"，尺寸规律得现场拟合。**
 `Real-ESRGAN` 是干净的 `out = 4×in`；但 waifu2x 的两个网络内部会吃掉一圈边界：
@@ -335,7 +386,7 @@ CUnet     : out = 2×in − 72
 `family=Archivo:wght@600;700` 这种一次要多个字重的写法，返回的 CSS 是**按子集分组**的（vietnamese / latin-ext / latin 各一段，
 每段里再分字重），子集注释写在 `@font-face` **前面**。如果解析时只匹配 `@font-face` 块、让子集名退化成默认值，
 就会把 vietnamese / latin-ext 也当成 latin 收进来，同一个文件名被反复覆盖 —— 最后 `archivo-600.woff2` 和 `archivo-700.woff2`
-字节完全相同。`web/fetch_fonts.py` 改成**一个字重一个请求**，只认 `/* latin */` 段，抓完再用 md5 去重校验。
+字节完全相同。`app/tools/fetch_fonts.py` 改成**一个字重一个请求**，只认 `/* latin */` 段，抓完再用 md5 去重校验。
 
 另外拉丁子集里没有 `→`(U+2192)，箭头会掉进系统字体、跟等宽数字对不齐，所以单独抓了一份符号子集（1.3KB）。
 
@@ -343,7 +394,7 @@ CUnet     : out = 2×in − 72
 
 第一个在服务端。指标里的「锐度增益」要跟双三次基线比，原来的写法是**先把整幅插值成双三次**再取中心 512×512 ——
 6744×10112 转成 float32 是 **816 MB**，加上中间那次除以 255 又是 816 MB，峰值 1.56 GB，就为了算一个 0.5 MP 区域的方差。
-现在把源图对应区域先裁出来、只插值那一小块，峰值 6.7 MB，而且结果**逐像素一致**（`web/perf_probe.py` 里对着核过）：
+现在把源图对应区域先裁出来、只插值那一小块，峰值 6.7 MB，而且结果**逐像素一致**（`app/qa/perf_probe.py` 里对着核过）：
 
 ```
 旧：整幅双三次插值     1.38 s   峰值 1560.9 MB
@@ -447,7 +498,7 @@ CUnet     : out = 2×in − 72
 
 现在的分工是：**`.bat` 一个中文字都没有，只负责找到一个能用的 Python**，
 之后所有中文提示都从 Python 出，`chcp 65001` + `PYTHONIOENCODING=utf-8` 保证它说话清楚。
-既然提示都搬进 Python 了，就顺手把三步串进 `web/bootstrap.py` 统一收尾（失败停住等回车、
+既然提示都搬进 Python 了，就顺手把三步串进 `app/server/bootstrap.py` 统一收尾（失败停住等回车、
 端口被占怎么说）—— `.bat` 和 `.sh` 因此都只剩二十来行，两边行为也一致，省得各改一遍。
 
 两个附带的坑：
@@ -456,6 +507,24 @@ CUnet     : out = 2×in − 72
   父子的缓冲各走各的，子进程的话会插到提示前面去，看着像顺序错乱。
 - 子进程一律显式带上 `PYTHONIOENCODING=utf-8`。`.sh` 那边没有 `chcp`，
   不钉一下中文就按系统编码出去变乱码 —— 和 Windows 那边对齐。
+
+**12. 同参数下本地比 bigjpg 糊 —— 不是参数不对，是网络出的是渐变边。**
+
+用户的反馈很具体：「最高参数跟 bigjpg 4x 卡通同一张图，我这边最高都比不过」。
+第一反应是参数没调对（降噪档、权重族），于是把五个预设 × 五档降噪全扫了一遍 —— **假设被证伪**：
+同参数下全都在 bigjpg 那版的三成上下，而且降噪档越高反而越锐（noise3 的拉普拉斯方差 133 > noise0 的 72），
+跟"降噪把细节抹平了"正好相反。
+
+真正的原因是**边的形状**，不是边的强度：网络把原图里 1 px 的线铺成了 4~7 px 的灰带（渐变边），
+bigjpg 那边是 2~3 px 的硬边。拉普拉斯方差量出来本地 100 上下、bigjpg 913 —— 差在一个数量级。
+
+解法是在**网络之后**补一道收尾锐化（unsharp mask）。难点是"锐"和"造噪"只隔一线：
+判据得同时看两条 —— 锐度（拉普拉斯方差）要上去，**最平的那 1% 块的标准差还得是 0.00**（大色块里不能冒麻点）。
+按预设给半径/增益（art 1.3/2.0、anime 1.0/0.85…），调完 art 标准档 517、更锐档 896，anime 更锐档 1099，
+跟 bigjpg 一个量级、且平块零噪点。**原样档=增益 0，与老版本逐像素一致**，想退回模型原味随时能退。
+
+教训：**画质比对别只盯着"参数"，先看"边是怎么断的"。** 这条也顺手解释了一个反直觉现象 ——
+别人（bigjpg）看着更锐，未必是用了更强的模型，很可能只是网络后面多了一道很普通的锐化。
 
 ## 关于"无损"
 

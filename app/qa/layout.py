@@ -13,11 +13,12 @@ import os
 import sys
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 PROFILE = os.path.join(ROOT, ".cache", "cdp-layout")
 
-from cdp import Session          # noqa: E402
+from app.qa.cdp import Session          # noqa: E402
 
 DUMP = r"""
 (() => {

@@ -11,12 +11,13 @@ import os
 import sys
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "web"))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 SHOTS = os.path.join(ROOT, ".cache", "shots")
 PROFILE = os.path.join(ROOT, ".cache", "cdp-shots")
 
-from cdp import Session          # noqa: E402
+from app.qa.cdp import Session          # noqa: E402
 
 BASE = "http://127.0.0.1:8765/"
 

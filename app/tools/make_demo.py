@@ -6,7 +6,7 @@
 放大算法最怕三类输入：细线条、小字号、噪点。这三张就是照着这三件事做的，
 尺寸刻意压到 360×240，4 倍出来刚好 1440×960 —— 一眼能看出差别。
 
-    python web/make_demo.py
+    python app/tools/make_demo.py
 输出：web/demo/{lineart,text,grain}.png
 """
 from __future__ import annotations
@@ -17,7 +17,11 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo")
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from app.core.paths import WEB_DIR                                      # noqa: E402
+
+OUT = os.path.join(WEB_DIR, "demo")      # 生成的示例图是前端资源，放 web/ 下
 W, H = 360, 240
 SS = 4                      # 超采样倍数，先画大再缩，线条才有干净的抗锯齿
 

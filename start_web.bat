@@ -8,7 +8,7 @@ rem  cmd.exe walks a .bat by byte offset, one line at a time. Multi-byte
 rem  characters (any Chinese at all) and LF-only line endings both
 rem  desynchronise it: it then runs fragments like  'd'  or  '\pip'  and
 rem  silently skips commands. So there is not one Chinese character below -
-rem  every message the user sees comes from Python (web\bootstrap.py), which
+rem  every message the user sees comes from Python (app\server\bootstrap.py), which
 rem  handles UTF-8 properly. The console is switched to UTF-8 for that reason.
 rem
 rem  All this file does: find a Python 3.9+ interpreter, then hand over.
@@ -48,7 +48,7 @@ set "RUNNER=%PY%"
 set "RUNARG="
 
 :launch
-"%RUNNER%" %RUNARG% "web\bootstrap.py" --port %PORT% --venv "%VENV%"
+"%RUNNER%" %RUNARG% "app\server\bootstrap.py" --port %PORT% --venv "%VENV%"
 exit /b %errorlevel%
 
 

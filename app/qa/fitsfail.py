@@ -6,7 +6,7 @@
 56dvh（就是在用户窗口里量出「差 196 px」的那个值），再量一遍 —— 断言必须当场翻脸。
 探针自己骗自己的坑上一轮踩过一次（框框那条），所以这条也照同样的规矩验一遍。
 
-    python web/_fitsfail.py --job 9f0ff8556cdd --size 1920,1080
+    python app/qa/fitsfail.py --job 9f0ff8556cdd --size 1920,1080
 """
 from __future__ import annotations
 
@@ -15,12 +15,13 @@ import os
 import sys
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 PROFILE = os.path.join(ROOT, ".cache", "cdp-shots")
 
-import shots                    # noqa: E402
-from cdp import Session         # noqa: E402
+from app.qa import shots                    # noqa: E402
+from app.qa.cdp import Session         # noqa: E402
 
 
 def sample(s: Session) -> dict:

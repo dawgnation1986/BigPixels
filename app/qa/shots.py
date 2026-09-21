@@ -3,13 +3,14 @@
 """
 给页面拍图 + 量交互，用来人眼和数字各过一遍（自动化测不出「好不好看」）。
 
-    python web/shots.py                       # 空态 / 载入示例 / 深色
-    python web/shots.py --src 图.png          # 先提交一个任务，再拍结果态和全屏态
-    python web/shots.py --job 7b781573c6ed    # 用已完成的任务拍
-    python web/shots.py --probe               # 额外量一遍放大镜的跟手程度
-    python web/shots.py --mobile --size 390,844    # 手机版面（真机视口 + 触摸模拟）
+    python app/qa/shots.py                       # 空态 / 载入示例 / 深色
+    python app/qa/shots.py --src 图.png          # 先提交一个任务，再拍结果态和全屏态
+    python app/qa/shots.py --job 7b781573c6ed    # 用已完成的任务拍
+    python app/qa/shots.py --probe               # 额外量一遍放大镜的跟手程度
+    python app/qa/shots.py --mobile              # 手机版面（390×844 真机视口 + 触摸模拟）
+    python app/qa/shots.py --mobile --size 430,932    # 想要别的手机尺寸就自己带 --size
 
-走 CDP（web/cdp.py），所以能做静态截图做不到的两件事：
+走 CDP（app/qa/cdp.py），所以能做静态截图做不到的两件事：
   · 真的进全屏再拍 —— 靠 JS 里 requestFullscreen，不做版式特判
   · 用真的鼠标事件横扫对照台，数取块请求、长任务、最大帧间隔
 
@@ -25,13 +26,14 @@ import time
 import urllib.parse
 import urllib.request
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 SHOTS = os.path.join(ROOT, ".cache", "shots")
 PROFILE = os.path.join(ROOT, ".cache", "cdp-shots")
 DEMO = os.path.join(ROOT, "web", "demo")
 
-from cdp import Session          # noqa: E402
+from app.qa.cdp import Session          # noqa: E402
 
 
 def post_job(base: str, src: str, preset: str, scale: int, denoise: str,
@@ -536,7 +538,8 @@ def main():
     ap.add_argument("--scale", type=int, default=4)
     ap.add_argument("--denoise", default="medium")
     ap.add_argument("--tile", type=int, default=256)
-    ap.add_argument("--size", default="1440,1180")
+    ap.add_argument("--size", default=None,
+                    help="视口尺寸 宽,高。不给时：普通模式 1440,1180，--mobile 模式 390,844。")
     ap.add_argument("--fs-size", default="1920,1040",
                     help="全屏那张按这个视口尺寸拍。CDP 拉起来的浏览器进不了真全屏，"
                          "会掉到 800×600，量出来的格子尺寸是假的 —— 所以进全屏后用"
@@ -548,7 +551,14 @@ def main():
                          "而且 pointer:coarse 不会命中、触屏文案的量法就是假的。")
     a = ap.parse_args()
     base = f"http://{a.host}:{a.port}/"
-    W, H = (int(v) for v in a.size.split(","))
+    # --mobile 单开时必须落到真手机宽度：默认 1440 会让「手机版面」这一条其实在测桌面，
+    # 一跑就绿，反而骗过自己。要别的尺寸就自己带 --size。
+    if a.size:
+        W, H = (int(v) for v in a.size.split(","))
+    elif a.mobile:
+        W, H = 390, 844
+    else:
+        W, H = 1440, 1180
 
     os.makedirs(SHOTS, exist_ok=True)
     # 不清空 profile：一是没必要，二是整目录删会被安全护栏拦下来。
