@@ -39,7 +39,10 @@ PRESETS: dict[str, dict] = {
         "noise": {0: "4x-AnimeSharp.onnx"},
         "dn_only": None,
         "hint": 4,
-        "sharp": (1.0, 0.85),
+        # 1.15：这个值是照着线上 bigjpg 的 4x 卡通校准的 —— 标准档落在
+        # 眼睛锐度 99.5% / 脸 97.1%，也就是「默认就对上」。
+        # 原来给 0.85，只有 78%，用户一看就说「整个画面还是朦朦胧胧的」。
+        "sharp": (1.0, 1.15),
     },
     "art": {
         "label": "卡通 / 插画（轻量）",
@@ -107,16 +110,22 @@ def resolve_model(preset: str, denoise: str, scale: int = 2) -> str:
         raise SystemExit(f"未知预设 '{preset}'，可选：{', '.join(PRESETS)}")
     p = PRESETS[preset]
     if scale == 1:
+        # 「只降噪」用不了：上游 deepghs/waifu2x_onnx 的 cunet/art/scale1x.onnx
+        # 实际是个 1542 字节的占位文件 —— 它不是模型。跑出来的东西跟输入逐像素相同
+        # （实测强噪声进去、std 一动不动），也就是**静默空转**。
+        # 与其给用户一张「看着成功、其实没降噪」的图，不如在这儿说清楚。
         if not p.get("dn_only"):
-            raise SystemExit(f"预设 '{preset}' 没有“只降噪”权重，无法 1x 处理")
-        path = os.path.join(MODEL_DIR, p["dn_only"])
-    else:
-        idx = DENOISE_LEVELS.get(denoise)
-        if idx is None:
-            raise SystemExit(f"未知降噪档 '{denoise}'，可选：{', '.join(DENOISE_LEVELS)}")
-        if idx not in p["noise"]:
-            idx = max(p["noise"])
-        path = os.path.join(MODEL_DIR, p["noise"][idx])
+            raise SystemExit(f"预设 '{preset}' 没有 1x 权重，无法只降噪")
+        raise SystemExit(
+            "1x「只降噪」这一档用不了：上游的 scale1x.onnx 是个 1542 字节的占位文件，"
+            "不是真模型（见 README「已知问题」）。\n"
+            "  要降噪就放大到 2x 及以上，用 --denoise 选降噪档 —— 那几档是好的。")
+    idx = DENOISE_LEVELS.get(denoise)
+    if idx is None:
+        raise SystemExit(f"未知降噪档 '{denoise}'，可选：{', '.join(DENOISE_LEVELS)}")
+    if idx not in p["noise"]:
+        idx = max(p["noise"])
+    path = os.path.join(MODEL_DIR, p["noise"][idx])
     if not os.path.isfile(path):
         raise SystemExit(f"模型文件不存在：{path}\n请先运行 python download_models.py")
     return path

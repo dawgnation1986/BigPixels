@@ -67,8 +67,9 @@ def _print_info():
     for k, v in PRESETS.items():
         files = list(v["noise"].values())
         have = sum(1 for f in files if os.path.isfile(os.path.join(MODEL_DIR, f)))
-        dn = "有" if v.get("dn_only") and os.path.isfile(os.path.join(MODEL_DIR, v["dn_only"])) else "无"
-        print(f"  {k:8s} ~{v['hint']}x  [{have}/{len(files)} 档权重就绪 | 1x降噪:{dn}]  "
+        # 1x 降噪那一档一律标「不可用」：上游的 scale1x.onnx 是个 1542 字节的占位文件，
+        # 文件在也跑不出降噪（实测输出 == 输入）。别再按「文件在不在」报「有」了。
+        print(f"  {k:8s} ~{v['hint']}x  [{have}/{len(files)} 档权重就绪]  "
               f"{v['desc']}  ({v.get('tech', '')})")
     print("\n本地模型：")
     if os.path.isdir(MODEL_DIR):

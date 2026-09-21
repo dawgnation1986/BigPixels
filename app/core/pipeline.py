@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 from .imaging import unsharp
-from .presets import resolve_model, resolve_sharpen
+from .presets import plan_passes, resolve_model, resolve_sharpen
 from .runner import SRRunner
 
 
@@ -36,7 +36,7 @@ def upscale(rgb: np.ndarray, preset: str, scale: int, denoise: str = "medium",
         cur = np.asarray(Image.fromarray((cur * 255 + 0.5).astype(np.uint8))
                          .resize((w, h), Image.LANCZOS), np.float32) / 255.0
     radius, gain = resolve_sharpen(preset, clear)
-    if gain > 0:
+    if gain > 0 and scale > 1:
         if on_stage:
             on_stage(f"收尾锐化 · 半径 {radius}px 增益 {gain:.2f}", passes, passes)
         cur = unsharp(cur, radius, gain)

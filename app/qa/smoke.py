@@ -31,6 +31,10 @@ from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEMO = os.path.join(ROOT, "web", "demo")
+# 放在模块顶层，别放进 main()：自检里要 import app.core / app.server，
+# 而 `python app/qa/smoke.py` 的 sys.path[0] 是 app/qa，不补上 ROOT 就 ModuleNotFoundError。
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 
 def get(url: str):
@@ -175,6 +179,19 @@ def main():
     check(st.get("t_net", 0) <= st.get("elapsed", 0), "推理耗时 <= 总耗时",
           f"{st.get('t_net')}s / {st.get('elapsed'):.1f}s")
 
+    # 4b. 库接口也能用（app.core 是公开入口，bench.py 走的就是它）
+    #     重构时漏了 pipeline 里的一个 import，服务端自己写循环所以看不出来，
+    #     但 `from app.core import upscale` 会直接 NameError —— 这条专门守着它。
+    try:
+        import app.core as _U
+        _tiny = np.full((24, 24, 3), 0.5, np.float32)
+        _out = _U.upscale(_tiny, "anime", 2, denoise="none", device="cpu",
+                          tile=64, clear="soft")
+        check(_out.shape == (48, 48, 3), "库接口 app.core.upscale 能跑",
+              f"24×24 -> {_out.shape[1]}×{_out.shape[0]}")
+    except Exception as e:                                  # noqa: BLE001
+        check(False, "库接口 app.core.upscale 能跑", f"{type(e).__name__}: {e}")
+
     # 5. 三张产物都取得到，而且字节数跟记录一致
     for what, key, magic in (("input", "in_bytes", None),
                              ("baseline", "bicubic_bytes", b"\x89PNG"),
@@ -295,8 +312,6 @@ def main():
     check(not flat, "outputs/web 根下没有散文件了", str(flat[:4]))
 
     # 迁移是幂等的：再喊一次不该再搬东西
-    if ROOT not in sys.path:
-        sys.path.insert(0, ROOT)
     import app.server.server as S                                 # noqa: E402
     again = S.migrate_layout()
     check(again["runs"] == 0, "旧版归档是幂等的（再跑一遍一无所获）", str(again))

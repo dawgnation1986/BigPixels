@@ -863,6 +863,10 @@ def run_job(jid: str) -> None:
     except Exception as e:
         j["state"] = "error"
         j["msg"] = f"{type(e).__name__}: {e}"
+        # 界面上只显示一行 msg，光看那句没法定位。traceback 落到服务端终端，
+        # 排查时不用再猜「这行错误是哪来的」。
+        import traceback
+        traceback.print_exc()
     finally:
         j["progress"] = 100 if j["state"] == "done" else j.get("progress", 0)
         save_meta(j)
