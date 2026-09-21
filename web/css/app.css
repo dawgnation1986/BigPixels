@@ -591,10 +591,18 @@ select{
    横屏手机（844×390）不用特判：宽度过 700，走的就是桌面那套左右布局，
    而那正好是横屏该有的样子（光台 704 宽、右栏 140 宽，两边都够用）。
    ============================================================================ */
+
+/* 窄屏抽屉那三块（抽屉头 / 遮罩 / 动作栏）在宽屏下完全不参与。
+   关在这里而不是媒体查询里覆盖：这样「宽屏版面一点没动」是结构上的事实，
+   不是靠一堆覆盖维持的 —— 覆盖会漏，漏了就是桌面上多出一条横栏。 */
+.drawerHead,.drawerBar,.drawerScrim{display:none}
+
 @media (max-width:700px){
 
   /* ---- 骨架：收紧边距 ---- */
-  .shell{padding-block:16px 40px;padding-inline:14px}
+  /* 底部要留出动作栏那一条，不然滚到底会有一截内容被压在栏底下。
+     光台的说明行、页脚都会正好卡在那儿，是最容易被忽略的一处遮挡。 */
+  .shell{padding-block:16px calc(78px + env(safe-area-inset-bottom,0px));padding-inline:14px}
   .bench{gap:22px;margin-block:18px 0}
   .console{gap:22px}
   .topbar{gap:10px;padding-block:0 11px}
@@ -602,6 +610,94 @@ select{
   .engine{gap:5px}
   .chip{padding:4px 7px}
   .foot{margin-block-start:30px}
+
+  /* ---- 控制栏收进底部抽屉 ----
+     原来窄屏是把六个步骤整块挂在光台上面（1080px 那条断点已经让它单列了），
+     结果手机上一屏几乎全是设置，图反而得划过去才看得见 —— 而这台机器真正
+     要看的就是那张图。改成抽屉：**默认收起**，页面只留「光台 + 一条动作栏」，
+     要调参数再拉开。跟「六个选择一眼看明白」不冲突：抽屉里的顺序和分组原样没动。
+
+     收起是两件事一起做的：translateY 推出屏幕 **加上** visibility:hidden。
+     少了后者，它还在可访问性树里 —— Tab 会钻进一个看不见的栏里，
+     而且这一点在截图上永远看不出来。 */
+  .drawerScrim{
+    display:block;position:fixed;inset:0;z-index:55;
+    background:rgba(11,13,12,.46);
+    opacity:0;visibility:hidden;
+    transition:opacity .24s,visibility 0s .24s;
+  }
+  body.drawer-open .drawerScrim{opacity:1;visibility:visible;transition:opacity .24s,visibility 0s 0s}
+
+  .console{
+    position:fixed;left:0;right:0;bottom:0;z-index:60;
+    margin:0;padding:0 14px calc(20px + env(safe-area-inset-bottom,0px));
+    /* 高度上限按视口算：抽屉再长也不许盖满整屏，上面总得露一截光台 ——
+       用户才知道自己是在「拉开一层」，而不是「换了一页」。 */
+    max-height:min(86dvh,760px);overflow-y:auto;overscroll-behavior:contain;
+    background:var(--panel);border-top:1px solid var(--line);
+    border-radius:var(--r-lg) var(--r-lg) 0 0;
+    box-shadow:0 -12px 40px -22px rgba(13,20,19,.55);
+    transform:translateY(101%);visibility:hidden;
+    transition:transform .28s cubic-bezier(.2,.7,.3,1),visibility 0s .28s;
+  }
+  body.drawer-open .console{
+    transform:none;visibility:visible;
+    transition:transform .28s cubic-bezier(.2,.7,.3,1),visibility 0s 0s;
+  }
+
+  /* 抽屉头：把手 + 「收起」。做成 sticky —— 六个步骤比一屏长的时候，
+     收起键得一直够得着，不能跟着内容滚走（那等于进得去出不来）。 */
+  .drawerHead{
+    display:flex;align-items:center;gap:10px;
+    position:sticky;top:0;z-index:1;
+    margin:0 -14px;padding:15px 14px 10px;
+    background:var(--panel);border-bottom:1px solid var(--line-soft);
+  }
+  .drawerHead .grab{
+    position:absolute;left:50%;top:7px;transform:translateX(-50%);
+    width:38px;height:3px;border-radius:2px;background:var(--line);
+  }
+  .drawerHead .dhTitle{
+    font:600 var(--t-xs)/1 var(--font-display);letter-spacing:.18em;
+    text-transform:uppercase;color:var(--mute);
+  }
+  .drawerHead .dhClose{
+    margin-inline-start:auto;display:inline-flex;align-items:center;gap:6px;
+    min-height:38px;padding:0 11px;cursor:pointer;
+    border:1px solid var(--line);border-radius:var(--r);background:var(--raise);
+    font-size:var(--t-sm);color:var(--ink-2);
+  }
+  .drawerHead .dhClose:hover{border-color:var(--accent-line);color:var(--ink)}
+  .drawerHead .dhClose svg{width:14px;height:14px;color:var(--mute)}
+
+  /* 动作栏：抽屉收着的时候它就顶替控制栏干活 ——
+     左边报账（哪张图、现在什么参数），右边那颗是 #go 的镜子。 */
+  .drawerBar{
+    display:flex;align-items:stretch;gap:9px;
+    position:fixed;left:0;right:0;bottom:0;z-index:50;
+    padding:9px 14px calc(9px + env(safe-area-inset-bottom,0px));
+    background:var(--raise);border-top:1px solid var(--line);
+    box-shadow:0 -10px 26px -20px rgba(13,20,19,.5);
+  }
+  .dbOpen{
+    flex:1;min-width:0;display:flex;align-items:center;gap:10px;text-align:start;
+    min-height:46px;padding:0 12px;cursor:pointer;
+    border:1px solid var(--line);border-radius:var(--r);background:var(--panel);
+  }
+  .dbOpen:hover{border-color:var(--accent-line)}
+  .dbOpen .dbTxt{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+  .dbOpen .dbTxt b{
+    font:500 var(--t-sm)/1.35 var(--font-body);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .dbOpen .dbTxt span{
+    font:400 var(--t-xs)/1.35 var(--font-mono);color:var(--mute);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .dbOpen svg{width:15px;height:15px;flex:none;color:var(--mute)}
+  /* .go 基础样式里是 width:100%（桌面它要占满整条控制栏），
+     进了动作栏得让位给左边那半条仪表 */
+  .drawerBar .go{width:auto;flex:0 0 auto;padding-inline:16px;white-space:nowrap}
 
   /* ---- 输入 ---- */
   .drop{padding:18px 14px}
@@ -621,6 +717,17 @@ select{
   .adv > summary,.foot summary{min-height:44px;display:flex;align-items:center}
   /* 折叠栏的三角本来靠 ::before 定位，summary 一变 flex 就得让它别被拉伸 */
   .adv > summary::before{flex:none}
+  /* .foot 那颗 summary 在桌面靠浏览器自带的三角；上面一改成 display:flex
+     三角就没了（Chrome 里 flex 的 summary 不画 marker）——
+     结果是「两个必须说清的坑」看着像一句普通正文，没人知道能点。
+     这里补一颗，跟 .adv 同一套画法；只写在窄屏里，桌面保持原样。 */
+  .foot summary::-webkit-details-marker{display:none}
+  .foot summary::before{
+    content:"";width:6px;height:6px;flex:none;margin-inline-end:9px;
+    border-right:1.5px solid var(--mute);border-bottom:1.5px solid var(--mute);
+    transform:rotate(-45deg);transition:transform .15s;
+  }
+  .foot details[open] > summary::before{transform:rotate(45deg)}
 
   /* ---- 光台 ---- */
   /* min-height:280px 是给桌面那个大横图留的，手机上它会把空态撑出一大块空白 */

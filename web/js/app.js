@@ -107,6 +107,96 @@ $("#themer").onclick = () => {
   applyTheme(THEMES[(i + 1) % THEMES.length][0]);
 };
 
+/* ---------------------------------------------------------- 窄屏抽屉
+   窄屏下整条控制栏收进从底部拉起的抽屉，页面上只留「光台 + 一条动作栏」——
+   手机上真正要看的是那张图，六个步骤不该一直占着半屏。
+
+   宽屏完全不参与：.drawerHead / .drawerBar / .drawerScrim 在样式里就是
+   display:none，.console 也还是原来那根普通栏。这里唯一的跨断点动作是
+   「拉宽越过 700px 时把抽屉关掉」，免得留下一个「开着但看不见」的状态。
+
+   收起状态记在 body 的 .drawer-open 上；对应的样式全部关在
+   @media (max-width:700px) 里，所以宽屏下这个类名加不加都没区别。 */
+const MOBILE = matchMedia("(max-width:700px)");
+const drawerOn = () => document.body.classList.contains("drawer-open");
+let drawerBack = null;      // 拉开抽屉之前焦点在哪儿，收起时还回去
+
+function setDrawer(on, back) {
+  if (on && !MOBILE.matches) on = false;            // 宽屏没有抽屉这回事
+  document.body.classList.toggle("drawer-open", on);
+  $("#drawerOpen").setAttribute("aria-expanded", on ? "true" : "false");
+  if (on) {
+    /* 焦点得跟着进去 —— 否则键盘的 Tab 还在背后那块光台上打转，
+       而光台此刻被遮罩盖着，等于在一片够不着的区域里走。 */
+    drawerBack = document.activeElement;
+    $("#drawerClose").focus();
+  } else {
+    /* 关闭时不能把焦点留在刚藏起来的抽屉里 —— 那会让下一次 Tab
+       从一个看不见的地方起步。还给它原来待的那颗键。
+       （back 显式传 null = 「这次别动焦点」，转屏那条路要用。） */
+    const b = back === undefined ? drawerBack : back;
+    if (b && typeof b.focus === "function" && b.offsetParent !== null) b.focus();
+    drawerBack = null;
+  }
+}
+
+$("#drawerOpen").onclick = () => setDrawer(true);
+$("#drawerClose").onclick = () => setDrawer(false);
+$("#drawerScrim").onclick = () => setDrawer(false);
+/* 动作栏那颗主键不复制 #go 的逻辑，只照它一下 ——
+   能不能按由 mirrorGo() 同步的禁用态把关，所以「灰的按不动、亮的一按就跑」。 */
+$("#barGo").onclick = () => $("#go").click();
+/* 跳转链接指的正是抽屉里的 #console；它收着的时候是 visibility:hidden，
+   浏览器滚不过去。所以窄屏改成直接拉开抽屉。 */
+$(".skip").onclick = e => {
+  if (!MOBILE.matches) return;            // 宽屏照旧，交给浏览器自己滚
+  e.preventDefault();
+  setDrawer(true);
+};
+
+/* Tab 圈在抽屉里：遮罩挡得住鼠标，挡不住键盘 ——
+   不圈的话 Tab 会一路走到遮罩背后的动作栏和光台上。 */
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && drawerOn()) { setDrawer(false); return; }
+  if (e.key !== "Tab" || !drawerOn()) return;
+  const f = [...$("#console").querySelectorAll(
+    'a[href],button:not([disabled]),input:not([disabled]),select,summary,[tabindex]:not([tabindex="-1"])')]
+    .filter(el => el.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
+/* 主键的镜子。盯 MutationObserver，而不是去那八处手动同步 ——
+   那些地方（fail / setSource / dropSource / updateReadout / setProg / showResult）
+   以后还会加，漏一处的表现是「栏上那颗是灰的、其实按得动」，极难发现。 */
+const mirrorGo = () => {
+  const g = $("#go"), b = $("#barGo");
+  if (!g || !b) return;
+  b.disabled = g.disabled;
+  b.textContent = g.textContent;
+};
+new MutationObserver(mirrorGo).observe($("#go"),
+  {attributes: true, attributeFilter: ["disabled"], childList: true, characterData: true, subtree: true});
+mirrorGo();
+
+/* 动作栏左边那半条仪表：抽屉收起来之后，用户得一眼知道
+   「选没选图、现在是什么参数」。参数一变就从下面那几个渲染函数过来。 */
+function syncBarSummary() {
+  $("#barName").textContent = S.src ? S.src.name : "还没选图";
+  const bits = [];
+  const p = ((S.cfg && S.cfg.presets) || []).find(x => x.id === S.sel.preset);
+  if (p) bits.push(p.label);
+  bits.push(S.sel.scale + "×");
+  if (NOISE_PRESETS.includes(S.sel.preset)) bits.push("降噪" + dnLabel(S.sel.denoise));
+  bits.push(clearLabel(S.sel.clear));
+  if (S.sel.bright && S.sel.bright !== "off") bits.push(brightLabel(S.sel.bright));
+  $("#barSum").textContent = bits.join(" · ");
+}
+
+MOBILE.addEventListener("change", () => { if (!MOBILE.matches) setDrawer(false, null); });
+
 /* ---------------------------------------------------------- 单选项组 */
 /* 用真的 radio：方向键切换、Tab 只在组内停一次，都是浏览器白送的，
    比手搓 role="radio" 可靠。选中态靠 .on 类，不依赖 :has()。 */
@@ -390,6 +480,7 @@ function applyPresetRules() {
   $("#denoiseNote").hidden = has;
   $("#denoiseNote").textContent = has ? "" :
     "Real-ESRGAN 与 AnimeSharp 各自只有一份权重、不带降噪档，这一项对它们不起作用。";
+  syncBarSummary();
 }
 
 function renderScales(c) {
@@ -399,7 +490,7 @@ function renderScales(c) {
 
 function renderDenoise(c) {
   radioGroup($("#denoise"), "denoise", c.denoise, S.sel.denoise,
-    it => it.label, id => { S.sel.denoise = id; });
+    it => it.label, id => { S.sel.denoise = id; syncBarSummary(); });
 }
 
 /* 清晰度：收尾锐化的强弱。原样 = 完全不锐化，更锐 = 线条最硬（接近线上那种观感）。
@@ -408,7 +499,7 @@ function renderDenoise(c) {
 function renderClear(c) {
   if (!c.clear) return;
   radioGroup($("#clarity"), "clear", c.clear, S.sel.clear,
-    it => it.label, id => { S.sel.clear = id; });
+    it => it.label, id => { S.sel.clear = id; syncBarSummary(); });
 }
 
 function clearLabel(id) {
@@ -421,7 +512,7 @@ function clearLabel(id) {
 function renderBright(c) {
   if (!c.bright) return;
   radioGroup($("#bright"), "bright", c.bright, S.sel.bright,
-    it => it.label, id => { S.sel.bright = id; });
+    it => it.label, id => { S.sel.bright = id; syncBarSummary(); });
 }
 
 function brightLabel(id) {
@@ -527,6 +618,7 @@ function renderTiles(c) {
 
 function updateReadout() {
   const out = $("#readout"), warn = $("#sizeWarn");
+  syncBarSummary();
   if (!S.src) {
     out.innerHTML = "<span>载入图片后这里会算出输出尺寸</span>";
     warn.hidden = true;
@@ -583,6 +675,9 @@ function markPasses(n) {
 
 async function start() {
   if (!S.src || S.busy) return;
+  /* 窄屏：一按就开始，抽屉收回去让位给光台和进度条 —— 挡着等于白等。
+     宽屏这句是空操作（那两个块是 display:none，焦点判断也进不去）。 */
+  setDrawer(false, $("#drawerOpen"));
   clearErr();
   S.busy = true;
   S.result = null;

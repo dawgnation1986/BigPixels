@@ -42,6 +42,21 @@
     <!-- ==================== 控制台 ==================== -->
     <section class="console" id="console" aria-label="控制台">
 
+      <!-- 窄屏下这一个块整块变成从底部拉起的抽屉（见 app.css 里 @media (max-width:700px)
+           的 .console 那段）；桌面这行是 display:none，版面逐像素不变。
+           里面那颗「收起」键不是装饰：抽屉是 fixed 铺在页面上，光靠点遮罩关不掉
+           键盘用户，而且手机上没有 Esc。 -->
+      <div class="drawerHead">
+        <span class="grab" aria-hidden="true"></span>
+        <span class="dhTitle">放大设置</span>
+        <button class="dhClose" id="drawerClose" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M6 9l6 6 6-6"/>
+          </svg>
+          收起
+        </button>
+      </div>
+
       <div class="grp reveal" style="--d:.04s">
         <div class="eyebrow"><span>1 选图</span><i></i></div>
         <div class="drop" id="drop" role="button" tabindex="0" aria-label="选择图片，或者把图片拖到这里">
@@ -184,7 +199,10 @@
       </div>
 
       <div class="toolbar reveal" style="--d:.14s">
-        <span class="hint grow" id="stageNote">结果出来后，把鼠标放到图上，下面的放大镜会跟上。</span>
+        <!-- 这一行在没选图时是 HTML 里这段文案，选过图就由 app.js 的 setSource 重写。
+             两处都得备一份触屏说法（这里用 data-touch），不然手机上会一直劝用户「把鼠标放到图上」。
+             文案跟 app.js 里 T() 的第二段必须一致。 -->
+        <span class="hint grow" id="stageNote" data-touch="结果出来后，点一下图上看哪儿，下面的放大镜就跟到那一块。">结果出来后，把鼠标放到图上，下面的放大镜会跟上。</span>
         <button class="dl" id="fs" type="button" aria-pressed="false" aria-disabled="true">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <path d="M4 9V4h5M20 15v5h-5M20 9V4h-5M4 15v5h5"/>
@@ -261,6 +279,24 @@
       </details>
 
     </section>
+  </div>
+
+  <!-- 窄屏的动作栏：抽屉收起来之后，屏幕上就剩「光台 + 这一条」——
+       左边是仪表（选了哪张图、现在什么参数），右边是主键。
+       主键不另起一套逻辑，它是 #go 的镜子（照抄禁用态和文字，见 app.js 的 mirror）。
+       宽屏下这两个块都是 display:none，DOM 在这儿只是为了让窄屏能用。 -->
+  <div class="drawerScrim" id="drawerScrim" aria-hidden="true"></div>
+  <div class="drawerBar" id="drawerBar">
+    <button class="dbOpen" id="drawerOpen" type="button" aria-expanded="false" aria-controls="console">
+      <span class="dbTxt">
+        <b id="barName">还没选图</b>
+        <span id="barSum">—</span>
+      </span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <path d="M6 15l6-6 6 6"/>
+      </svg>
+    </button>
+    <button class="go" id="barGo" type="button" disabled>开始放大</button>
   </div>
 
   <footer class="foot reveal" style="--d:.3s">

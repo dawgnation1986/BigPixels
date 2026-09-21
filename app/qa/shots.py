@@ -95,6 +95,24 @@ def hover_stage(s: Session, frac: float = 0.5, yfrac: float = 0.5, settle: bool 
     return b
 
 
+def click_box(s: Session, sel: str, frac: float = 0.5, yfrac: float = 0.5) -> bool:
+    """真用鼠标点一下某个元素。
+
+    刻意不用 el.click()：程序化点击绕过命中区域和遮挡 —— 而抽屉这件事
+    要验的恰恰是「手指点得着吗」。按钮被遮罩压着、或者被挤出屏幕，
+    el.click() 照样"点成功了"，真鼠标就点不到。
+    yfrac 是给遮罩留的：抽屉铺在屏幕下半截，点遮罩得挑上面那一段。"""
+    b = s.box(sel)
+    if not b or b["w"] < 2 or b["h"] < 2:
+        return False
+    x = int(round(b["x"] + b["w"] * frac))
+    y = int(round(b["y"] + b["h"] * yfrac))
+    s.mouse(x, y)
+    s.mouse(x, y, "mousePressed", "left", 1, 1)
+    s.mouse(x, y, "mouseReleased", "left", 0, 1)
+    return True
+
+
 WATCH = r"""
 window.__long = []; window.__frames = [];
 try { new PerformanceObserver(l => { for (const e of l.getEntries())
@@ -230,6 +248,32 @@ CHECK = r"""
     hScroll: document.documentElement.scrollWidth > innerWidth + 1,
     docW: document.documentElement.scrollWidth,
     dropHint: t('#drop small'),
+    /* 窄屏抽屉：动作栏在不在、抽屉是收着还是拉着、收起时是不是真的藏干净了。
+       「藏干净」要量两样 —— 位置（整个在视口下方）和 visibility（hidden）。
+       只量位置的话，一个还留在可访问性树里的抽屉照样能过，
+       而那正是键盘 Tab 会钻进去的那种坏法，截图上一点看不出来。 */
+    drawer: (() => {
+      const bar = q('#drawerBar'), con = q('#console'), btn = q('#drawerOpen');
+      if (!bar || getComputedStyle(bar).display === 'none') return {bar: false};
+      const rb = bar.getBoundingClientRect(), rc = con.getBoundingClientRect();
+      const g = q('#go'), bg = q('#barGo');
+      return {
+        bar: true,
+        barH: Math.round(rb.height),
+        barGap: Math.round(innerHeight - rb.bottom),
+        open: document.body.classList.contains('drawer-open'),
+        conTop: Math.round(rc.top),
+        conVis: getComputedStyle(con).visibility,
+        expanded: btn ? btn.getAttribute('aria-expanded') : null,
+        name: q('#barName') ? q('#barName').textContent : '',
+        sum: q('#barSum') ? q('#barSum').textContent : '',
+        /* 宽屏那边靠这两样确认「一点没动」：控制栏得还是普通流里的 static，
+           不是窄屏那个 fixed 抽屉 */
+        conPos: getComputedStyle(con).position,
+        go: (g && bg) ? {d: [!!g.disabled, !!bg.disabled],
+                         x: [g.textContent, bg.textContent]} : null
+      };
+    })(),
     err: window.__err || []
   };
 })()
@@ -252,6 +296,15 @@ def report_check(c: dict, mobile: bool = False):
           + ("" if c.get("dupIds") else " · 全页无重复 id"))
     bg = c.get("brightGrp") or {}
     print(f"            明暗 {bg.get('kids')} 档 · 落在「{bg.get('grp')}」分组")
+    dw = c.get("drawer") or {}
+    if mobile and dw.get("bar"):
+        g = dw.get("go") or {"x": ["—", "—"], "d": [0, 0]}
+        print(f"            抽屉：动作栏 {dw['barH']} px 贴底（留白 {dw['barGap']} px）"
+              f" · {'拉着' if dw['open'] else '收着'}"
+              f" · 控制栏 top {dw['conTop']} / 视口 {c.get('vh')} · visibility {dw['conVis']}"
+              f" · 主键「{g['x'][1]}」{'（灰）' if g['d'][1] else ''}"
+              f" · aria-expanded={dw.get('expanded')}")
+        print(f"            动作栏报账：「{dw.get('name')}」{dw.get('sum')}")
     if c.get("keepNote"):
         print("            " + c["keepNote"])
     if c.get("modelWarn"):
@@ -300,6 +353,40 @@ def report_check(c: dict, mobile: bool = False):
     bg = c.get("brightGrp")
     if not bg or bg.get("kids") != 2 or not bg.get("own"):
         bad.append(f"明暗开关没画进「明暗」那一组（{bg}）")
+    # 窄屏抽屉：动作栏必须在、必须贴底；抽屉收着就得是真的收干净
+    # （藏到视口外 **并且** visibility:hidden，两样都要 —— 只验位置的话，
+    #  一个还留在可访问性树里的抽屉照样过，而 Tab 会钻进那种抽屉里）。
+    # 拉着的时候反过来验：真进来了、aria-expanded 对上了。
+    dw = c.get("drawer") or {}
+    if mobile:
+        if not dw.get("bar"):
+            bad.append("窄屏没看到动作栏（.drawerBar 还是 display:none）")
+        else:
+            if dw["barGap"] != 0:
+                bad.append(f"动作栏没贴住底边（还差 {dw['barGap']} px）")
+            if dw["barH"] < 44:
+                bad.append(f"动作栏只有 {dw['barH']} px 高，手指按不准")
+            if dw["open"]:
+                if dw["conVis"] != "visible" or dw["conTop"] >= c.get("vh", 0):
+                    bad.append(f"抽屉说是拉着，其实没进来（top {dw['conTop']} · {dw['conVis']}）")
+                if dw["expanded"] != "true":
+                    bad.append("抽屉拉着，那颗键却没写 aria-expanded=true")
+            else:
+                if dw["conVis"] != "hidden":
+                    bad.append(f"抽屉收着却还是 {dw['conVis']} —— 键盘 Tab 能摸进去")
+                if dw["conTop"] < c.get("vh", 0) - 2:
+                    bad.append(f"抽屉收着却还露着（top {dw['conTop']}，视口 {c.get('vh')}）")
+                if dw["expanded"] != "false":
+                    bad.append("抽屉收着，那颗键却没写 aria-expanded=false")
+            g = dw.get("go")
+            if g and (g["d"][0] != g["d"][1] or g["x"][0] != g["x"][1]):
+                bad.append(f"动作栏那颗主键跟 #go 对不上（{g}）")
+    elif dw.get("bar") or dw.get("conPos") == "fixed":
+        # 宽屏非回归：抽屉那三块在宽屏下必须是 display:none，控制栏必须还是
+        # 普通流里的 static。改成 fixed 会让它在桌面上也浮起来，
+        # 而这件事在桌面的截图上很可能看着"还行"，只有这一条能把住。
+        bad.append(f"宽屏上把窄屏那套画出来了（动作栏 {dw.get('bar')} · "
+                   f"控制栏 position {dw.get('conPos')}）")
     if c.get("loupeHidden") is False:
         # 放大镜必须排在「这次改了什么」之前；取景滑块必须真的画出来了（用户截图里没见到它）；
         # 光台和放大镜必须同屏 —— 用户的原话是「鱼和熊掌不可兼得」。
@@ -604,7 +691,7 @@ def main():
 
     # 每条 URL 都写死主题：profile 是复用的，而页面会把 ?theme= 记进 localStorage，
     # 不写死的话「结果态」会莫名其妙跟着上一轮的深色走。
-    plan = [("01-空态", base + "?theme=light", "载入前：控制台四步 + 示例图", False),
+    plan = [("01-空态", base + "?theme=light", "载入前：控制台六个选择 + 示例图", False),
             ("02-载入示例", base + "?theme=light&demo=" + a.demo,
              "载入示例后的工作态", False)]
     if jid:
@@ -683,6 +770,53 @@ def main():
                     else:
                         s.call("Emulation.clearDeviceMetricsOverride")
                     time.sleep(0.3)
+
+        if a.mobile:
+            # 窄屏的重点就在这条：控制栏是不是真收进了抽屉。
+            # 量两遍 —— 收着的时候（默认）和点开之后 —— 因为「收干净」和
+            # 「拉开进得来」是两个独立的坏法，只量一遍必漏一边。
+            print("  ..  06-抽屉  窄屏动作栏 + 拉开的抽屉")
+            s.call("Page.navigate", url=base + "?theme=light")
+            time.sleep(0.7)
+            s.ready()
+            if not report_check(s.js(CHECK), True):
+                errors.append("06-抽屉-收起")
+            out = os.path.join(SHOTS, "06.png")
+            s.shot(out)
+            print(f"      -> {out}  {os.path.getsize(out) / 1024:.0f} KB")
+
+            if not click_box(s, "#drawerOpen"):
+                print("      ! 点不到那颗拉开设置的键")
+                errors.append("06-抽屉-点不开")
+            else:
+                time.sleep(0.9)          # 让 0.28s 的滑入动画走完再量
+                if not report_check(s.js(CHECK), True):
+                    errors.append("07-抽屉-拉开")
+                out = os.path.join(SHOTS, "07.png")
+                s.shot(out)
+                print(f"      -> {out}  {os.path.getsize(out) / 1024:.0f} KB")
+
+                # 动作栏那行报账得跟着参数动 —— 抽屉收着的时候它是用户唯一的读数，
+                # 停在旧值上等于在骗人。换个清晰度档看它变不变。
+                before = s.js("document.querySelector('#barSum').textContent")
+                s.js("document.querySelector('#clarityGrp')"
+                     ".scrollIntoView({block:'center'})")
+                time.sleep(0.4)
+                click_box(s, "#clarity > label:nth-child(3)")
+                time.sleep(0.4)
+                after = s.js("document.querySelector('#barSum').textContent")
+                print(f"      报账跟随：换清晰度档 「{before}」 → 「{after}」")
+                if before == after:
+                    print("      ! 换了档位，动作栏那行报账没跟着变")
+                    errors.append("07-抽屉-报账没跟随")
+
+                # 点遮罩关得掉吗 —— 手机上没有 Esc，这是主要的关法之一
+                if not click_box(s, "#drawerScrim", 0.5, 0.12):
+                    print("      ! 点不到遮罩")
+                time.sleep(0.5)
+                if s.js("document.body.classList.contains('drawer-open')"):
+                    print("      ! 点了遮罩抽屉还开着")
+                    errors.append("07-抽屉-遮罩关不掉")
 
         if a.probe:
             if not jid:
