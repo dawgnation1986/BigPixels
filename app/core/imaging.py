@@ -13,7 +13,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 # --------------------------------------------------------------------------- #
-# 收尾锐化（unsharp mask）
+# 高斯模糊（收尾锐化与源图去碎纹共用）
 # --------------------------------------------------------------------------- #
 def _gauss_kernel(radius: float) -> np.ndarray:
     k = max(1, int(math.ceil(radius * 3.0)))
@@ -50,6 +50,52 @@ def _gauss_blur(rgb: np.ndarray, radius: float, row_chunk: int = 256) -> np.ndar
     return out
 
 
+# --------------------------------------------------------------------------- #
+# 源图去碎纹（进网络之前）
+# --------------------------------------------------------------------------- #
+# 幅度阈值：压掉多少灰阶以下的高频。55/1000 是拿一张眼珠被网纹糊住的图量出来的 ——
+# JPEG 在强边周围留的振铃（蚊噪）只有几个灰阶，真线稿有几十个，切在中间两边都顾得上。
+# 高斯半径 0.8（不是 1.0）：网纹在这个尺度上就基本被隔离干净了，而半径收到 1.0 会把
+# 稍宽一点的真实细节也卷进来 —— 实测卡通样本 PSNR 从 +2.10 掉到 +1.99，正好跌破门禁。
+DECLIP_THRESHOLD = 0.055
+DECLIP_SIGMA = 0.8
+
+
+def declip(rgb: np.ndarray, sigma: float | None = None,
+           threshold: float | None = None) -> np.ndarray:
+    """把源图里「小幅度的高频」压掉，留下真正的边（JPEG 振铃 / 蚊噪清理）。
+
+    为什么需要这一步：细节模型（4x-AnimeSharp 这类）会把 JPEG 在强边旁边留下的
+    几个灰阶的振铃当成纹理，放大成一整片网纹 —— 眼睛、嘴这类「小尺寸 + 四周全是强边」
+    的地方最明显，皮肤和雪地这类大块平坦区反而没事。源图越糊、压得越狠，越容易出。
+
+    为什么不能简单模糊：振铃和 1px 线稿在**空间尺度**上是同一个量级，3x3 中值这类
+    「按尺度切」的做法会把线稿一起削掉（实测头发细节掉到三分之一）。两者的差别在**幅度**
+    —— 振铃几个灰阶、线稿几十个 —— 所以按幅度切：小于 threshold 的高频归零，
+    大于 2×threshold 的原样保留。
+
+    中间那段走平滑斜坡，而不是从幅度里减掉一个常数：减去常数会把**所有**高频
+    一起削薄，真边也跟着掉 —— 实测卡通样本的 PSNR 会从 +2.67 dB 掉到 +1.07。
+    斜坡只动振幅小那一档，大于 2T 的边一个灰阶都不碰。
+
+    只依赖已有的可分离高斯，代价是一遍模糊，跟网络推理比可以忽略。
+    """
+    # 默认值在这里解析，不写进函数签名 —— 写进签名就固化成定义那一刻的值了，
+    # 之后调 DECLIP_THRESHOLD 不生效（扫参数时被这个坑过一次）。
+    sigma = DECLIP_SIGMA if sigma is None else float(sigma)
+    threshold = DECLIP_THRESHOLD if threshold is None else float(threshold)
+    if threshold <= 0 or sigma <= 0:
+        return rgb
+    base = _gauss_blur(rgb, sigma)
+    hf = rgb - base
+    w = np.clip((np.abs(hf) - threshold) / threshold, 0.0, 1.0)
+    w = w * w * (3.0 - 2.0 * w)          # smoothstep：两端斜率都是 0，不留台阶
+    return np.clip(base + hf * w, 0.0, 1.0)
+
+
+# --------------------------------------------------------------------------- #
+# 收尾锐化（unsharp mask）
+# --------------------------------------------------------------------------- #
 def unsharp(rgb: np.ndarray, radius: float, gain: float) -> np.ndarray:
     """边缘锐化：rgb + gain * (rgb - 模糊版)。gain<=0 直接原样返回。
 

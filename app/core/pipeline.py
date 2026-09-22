@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from .imaging import brighten, unsharp
+from .imaging import brighten, declip, unsharp
 from .presets import plan_passes, resolve_bright, resolve_model, resolve_sharpen
 from .runner import SRRunner
 
@@ -23,10 +23,13 @@ def build_runner(preset: str, scale: int, denoise: str = "medium", device: str =
 def upscale(rgb: np.ndarray, preset: str, scale: int, denoise: str = "medium",
             device: str = "auto", tile: int = 256, overlap: int = 16,
             clear: str | float = "normal", bright: str | float = "off",
-            on_stage=None, runner: SRRunner | None = None) -> np.ndarray:
+            on_stage=None, runner: SRRunner | None = None,
+            clean: bool = True) -> np.ndarray:
     runner = runner or build_runner(preset, scale, denoise, device, tile, overlap)
     passes, net_scale = plan_passes(scale, runner.scale)
-    cur = rgb
+    # 进网络之前先把源图的 JPEG 振铃压掉：细节模型会把那几个灰阶的振铃当成纹理，
+    # 放大成一片网纹（眼睛、嘴这种「小尺寸 + 四周全是强边」的地方最明显）。
+    cur = declip(rgb) if clean else rgb
     for p in range(passes):
         if on_stage:
             on_stage(f"第 {p + 1}/{passes} 次网络推理 · {runner.name}", p, passes)
