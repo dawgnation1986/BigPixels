@@ -41,7 +41,7 @@ if ROOT not in sys.path:
 
 from app.core import (                     # noqa: E402
     BRIGHT_LEVELS, CLEAR_LEVELS, DENOISE_LEVELS, MODEL_DIR, PRESETS, SRRunner,
-    brighten, load_image, ort, plan_passes, resolve_bright, resolve_model,
+    brighten, declip, load_image, ort, plan_passes, resolve_bright, resolve_model,
     resolve_sharpen, save_image, unsharp, upscale_alpha,
 )
 from app.core.i18n import t, set_lang       # noqa: E402
@@ -184,7 +184,10 @@ def main(argv=None):
         print(t("cli.run.file", i=i, n=len(targets), name=os.path.basename(f),
                 w=w0, h=h0, mode=mode))
         t0 = time.time()
-        cur = rgb
+        # 进网络之前先把源图的 JPEG 振铃压掉，跟 app/core/pipeline.py 的 upscale()
+        # 保持一致。位图和网页各写一套循环，这一步漏掉哪一边，同一张图就会出两种
+        # 结果；自检 4d/4e 用「各入口的结果 == app.core.upscale」把三条路钉在一起。
+        cur = declip(rgb)
         for p in range(passes):
             state = {"last": -1}
 

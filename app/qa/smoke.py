@@ -305,6 +305,31 @@ def main():
         check(False, "网页推理链 == app.core.upscale（declip 没漏）",
               f"{type(e).__name__}: {e}")
 
+    # 4e. 命令行那条链同理 —— 位图和网页各写一套循环，两边都得钉住。
+    #     这里起一条**真命令**（不是 import 进去调函数），比的是它落盘的 png，
+    #     跟 4d 用的是同一张探针、同一个基准 lib_u8。
+    try:
+        import subprocess
+        _pdir = tempfile.mkdtemp(prefix="bp_cli_probe_")
+        _pin = os.path.join(_pdir, "probe.png")
+        _pout = os.path.join(_pdir, "probe_2x.png")
+        Image.fromarray(_u8).save(_pin, "PNG")
+        _cp = subprocess.run(
+            [sys.executable, os.path.join(ROOT, "app", "cli", "upscale.py"), _pin,
+             "-o", _pout, "--preset", "anime", "--scale", "2", "--denoise", "none",
+             "--clear", "normal", "--bright", "off", "--tile", "128"],
+            cwd=ROOT, capture_output=True, text=True, timeout=600)
+        cli_u8 = np.asarray(Image.open(_pout).convert("RGB"), np.uint8)
+        shutil.rmtree(_pdir, ignore_errors=True)
+        dmax2 = int(np.abs(cli_u8.astype(int) - lib_u8.astype(int)).max())
+        check(_cp.returncode == 0 and cli_u8.shape == lib_u8.shape and dmax2 <= 2,
+              "命令行推理链 == app.core.upscale（declip 没漏）",
+              f"{cli_u8.shape[1]}×{cli_u8.shape[0]} · 最大像素差 {dmax2}/255"
+              + ("" if _cp.returncode == 0 else f" · 退出码 {_cp.returncode}"))
+    except Exception as e:                                  # noqa: BLE001
+        check(False, "命令行推理链 == app.core.upscale（declip 没漏）",
+              f"{type(e).__name__}: {e}")
+
     # 5. 三张产物都取得到，而且字节数跟记录一致
     for what, key, magic in (("input", "in_bytes", None),
                              ("baseline", "bicubic_bytes", b"\x89PNG"),
