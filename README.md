@@ -736,9 +736,10 @@ bigjpg 的特征恰恰是**在低对比度下达到高锐度**（41.3 / 2007）�
 |---|---|
 | **Rain** · [@dawgnation1986](https://github.com/dawgnation1986) | 提出需求与方向、判断画质与观感、定下默认预设与各档取舍、逐轮验收 |
 | **BigPixel** 🔍 | 引擎与网页实现、预设与锐化参数标定、自检与探针脚本、文档与界面多语言 |
+| **DeepSeek-V4.1-Flash** | 上述 AI 助手所用的底层模型（经 WorkBuddy 调用） |
 
-BigPixel 是本机上的 AI 编程助手（WorkBuddy），在 Rain 的机器上参与本仓库开发 ——
-需求、方向与验收由 Rain 把关，代码、标定数据与文档由两者协作产出。
+BigPixel 是本机上的 AI 编程助手（WorkBuddy），底层模型为 **DeepSeek-V4.1-Flash**，在 Rain 的机器上
+参与本仓库开发 —— 需求、方向与验收由 Rain 把关，代码、标定数据与文档由两者协作产出。
 
 ## 许可证与致谢
 
