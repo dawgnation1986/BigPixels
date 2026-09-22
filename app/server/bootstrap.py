@@ -138,7 +138,6 @@ def ask_lang() -> str | None:
 def banner() -> None:
     print()
     print("  " + U.t("app.title"))
-    print("  " + U.t("app.tagline"))
     print("  " + "-" * 62)
 
 

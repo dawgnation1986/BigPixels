@@ -9,7 +9,6 @@
   "lang.setting": "界面语言",
 
   "app.title": "BigPixels 放大台 · 本地版",
-  "app.tagline": "在本机运行的 AI 无损放大；图片不会离开本机，也不会上传至任何位置。",
   "boot.spawn": "起不了进程 {cmd}：{err}",
 
   "step.env": "运行环境",
@@ -74,9 +73,9 @@
 
   "dl.title": "模型目录  {dir}",
   "dl.manifest": "清单      {n} 个 · 合计 {size}",
-  "dl.row.have": "有  {name:<38s} {size:>9s}",
-  "dl.row.missing": "缺  {name:<38s} {size:>9s}   {why}",
-  "dl.sum": "合计：{have} 个在 · {miss} 个缺",
+  "dl.row.have": "存在  {name:<38s} {size:>9s}",
+  "dl.row.missing": "缺失  {name:<38s} {size:>9s}   {why}",
+  "dl.sum": "合计：{have} 个存在 · {miss} 个缺失",
   "dl.sum.todo": "，要下 {size}",
   "dl.all_ok": "模型已齐备。",
   "dl.desc": "BigPixels 模型自检 / 下载（权重不上仓库，按需现下）",

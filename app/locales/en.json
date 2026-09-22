@@ -9,7 +9,6 @@
   "lang.setting": "Interface language",
 
   "app.title": "BigPixels Upscaler · Local",
-  "app.tagline": "AI lossless upscaling that runs on this machine; images never leave the machine and are never uploaded anywhere.",
   "boot.spawn": "Cannot start process {cmd}: {err}",
 
   "step.env": "Runtime environment",
@@ -74,8 +73,8 @@
 
   "dl.title": "Model directory  {dir}",
   "dl.manifest": "Manifest   {n} items · total {size}",
-  "dl.row.have": "Have  {name:<38s} {size:>9s}",
-  "dl.row.missing": "Miss  {name:<38s} {size:>9s}   {why}",
+  "dl.row.have": "Present  {name:<38s} {size:>9s}",
+  "dl.row.missing": "Missing  {name:<38s} {size:>9s}   {why}",
   "dl.sum": "Total: {have} present · {miss} missing",
   "dl.sum.todo": ", to download {size}",
   "dl.all_ok": "All models present.",

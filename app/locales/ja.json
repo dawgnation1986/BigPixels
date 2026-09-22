@@ -9,7 +9,6 @@
   "lang.setting": "インターフェースの言語",
 
   "app.title": "BigPixels 拡大台 · ローカル版",
-  "app.tagline": "本機で動作する AI 無劣化拡大。画像は本機から出ず、どこへもアップロードされない。",
   "boot.spawn": "プロセス {cmd} を起動できない：{err}",
 
   "step.env": "実行環境",
@@ -74,9 +73,9 @@
 
   "dl.title": "モデルディレクトリ  {dir}",
   "dl.manifest": "リスト      {n} 個 · 合計 {size}",
-  "dl.row.have": "有  {name:<38s} {size:>9s}",
-  "dl.row.missing": "欠  {name:<38s} {size:>9s}   {why}",
-  "dl.sum": "合計：{have} 個あり · {miss} 個欠け",
+  "dl.row.have": "存在  {name:<38s} {size:>9s}",
+  "dl.row.missing": "欠落  {name:<38s} {size:>9s}   {why}",
+  "dl.sum": "合計：{have} 個存在 · {miss} 個欠落",
   "dl.sum.todo": "、取得する {size}",
   "dl.all_ok": "モデルは揃っている。",
   "dl.desc": "BigPixels モデル自己診断 / 取得（重みはリポジトリになく、必要時に取得）",
