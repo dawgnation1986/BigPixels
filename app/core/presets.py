@@ -1,11 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""模型注册表与档位解析：预设 / 降噪 / 清晰度 → 具体权重文件名和锐化参数。"""
+"""模型注册表与档位解析：预设 / 降噪 / 清晰度 → 具体权重文件名和锐化参数。
+
+给用户看的名字和说明不在这里 —— 那些在 app/locales/<lang>.json，
+按 `preset.<id>.label|desc|tech`、`denoise.<id>`、`clear.<id>.label|desc`、
+`bright.<id>.label|desc` 取。这张表只放"哪个档用哪个文件、锐化给多少"。
+"""
 from __future__ import annotations
 
 import math
 import os
 
+from .i18n import t
 from .paths import MODEL_DIR
 
 
@@ -33,9 +39,6 @@ from .paths import MODEL_DIR
 #   注：下面 sharp 的数值是「锐化该给多少」，与上面这个「选哪个权重」是两回事。
 PRESETS: dict[str, dict] = {
     "anime": {
-        "label": "动漫插画",
-        "desc": "彩色二次元插画 / 原画 —— 细节保留最多、线条最锐利，且在 GPU 上速度最快",
-        "tech": "4x-AnimeSharp · 原生 4× · 68 MB · 单权重，无降噪档",
         "noise": {0: "4x-AnimeSharp.onnx"},
         "dn_only": None,
         "hint": 4,
@@ -48,9 +51,6 @@ PRESETS: dict[str, dict] = {
         "sharp": (0.85, 1.30),
     },
     "art": {
-        "label": "卡通 / 插画（轻量）",
-        "desc": "waifu2x 早期模型，输出偏「软」偏保守；仅支持 CPU，速度反而慢于上一档",
-        "tech": "waifu2x CUnet · 原生 2× · 4.9 MB/档 · 带四档降噪权重",
         "noise": {
             0: "waifu2x_cunet_art_noise0_2x.onnx",
             1: "waifu2x_cunet_art_noise1_2x.onnx",
@@ -62,9 +62,6 @@ PRESETS: dict[str, dict] = {
         "sharp": (1.3, 2.0),
     },
     "art-hd": {
-        "label": "插画 高清",
-        "desc": "waifu2x Swin 版，比「轻量」更干净，同样为 2× 串联",
-        "tech": "waifu2x Swin-UNet · 原生 2× · 16 MB/档 · 带四档降噪权重",
         "noise": {
             0: "waifu2x_swin_art_noise0_2x.onnx",
             1: "waifu2x_swin_art_noise1_2x.onnx",
@@ -76,18 +73,12 @@ PRESETS: dict[str, dict] = {
         "sharp": (1.1, 1.6),
     },
     "esrgan": {
-        "label": "通用场景",
-        "desc": "照片与插画皆可，容错性最好；细节不及「动漫插画」",
-        "tech": "Real-ESRGAN x4plus · 原生 4× · 68 MB · 单权重，无降噪档",
         "noise": {0: "RealESRGAN_x4plus.onnx"},
         "dn_only": None,
         "hint": 4,
         "sharp": (0.8, 0.6),
     },
     "photo": {
-        "label": "照片 / 实拍",
-        "desc": "真实照片，输出偏保守",
-        "tech": "waifu2x Swin-UNet photo 域 · 原生 2× · 18 MB/档",
         "noise": {
             0: "waifu2x_swin_photo_noise0_2x.onnx",
             1: "waifu2x_swin_photo_noise1_2x.onnx",
@@ -105,7 +96,6 @@ DENOISE_LEVELS = {"none": 0, "low": 1, "medium": 2, "high": 3, "highest": 3}
 # 清晰度档位 -> 在预设基准锐度上再乘一个系数。
 # 这三档是给用户「我要更接近线上那种硬线条」的入口，原样就是完全不做锐化。
 CLEAR_LEVELS = {"soft": 0.0, "normal": 1.0, "crisp": 1.5}
-CLEAR_LABELS = {"soft": "原样", "normal": "标准", "crisp": "更锐"}
 
 # 明暗档：本质是个开关，只有「原样 / 提亮」两档。
 # 1.019 是量出来的，不是拍的 —— 线上 bigjpg 卡通/插画 4x 的平坦区拟合下来是
@@ -113,12 +103,16 @@ CLEAR_LABELS = {"soft": "原样", "normal": "标准", "crisp": "更锐"}
 # 说清楚代价：这一档会让输出**更不像原图**（对原图 PSNR 会掉），
 # 换的是「线上那种通透观感」。默认关。
 BRIGHT_LEVELS = {"off": 1.0, "lift": 1.019}
-BRIGHT_LABELS = {"off": "原样", "lift": "提亮"}
+
+
+def label(kind: str, code: str) -> str:
+    """档位的中文/英文/日文名。kind 是 preset / denoise / clear / bright。"""
+    return t(f"{kind}.{code}.label")
 
 
 def resolve_model(preset: str, denoise: str, scale: int = 2) -> str:
     if preset not in PRESETS:
-        raise SystemExit(f"未知预设 '{preset}'，可选：{', '.join(PRESETS)}")
+        raise SystemExit(t("err.preset", name=preset, list=", ".join(PRESETS)))
     p = PRESETS[preset]
     if scale == 1:
         # 「只降噪」用不了：上游 deepghs/waifu2x_onnx 的 cunet/art/scale1x.onnx
@@ -126,19 +120,16 @@ def resolve_model(preset: str, denoise: str, scale: int = 2) -> str:
         # （实测强噪声进去、std 一动不动），也就是**静默空转**。
         # 与其给用户一张「看着成功、其实没降噪」的图，不如在这儿说清楚。
         if not p.get("dn_only"):
-            raise SystemExit(f"预设 '{preset}' 没有 1x 权重，无法只降噪")
-        raise SystemExit(
-            "1x「只降噪」这一档不可用：上游的 scale1x.onnx 是 1542 字节的占位文件，"
-            "并非真实模型（见 README「已知问题」）。\n"
-            "  如需降噪，请放大到 2x 及以上，并用 --denoise 选择降噪档 —— 那几档是正常的。")
+            raise SystemExit(t("err.preset_no_dn1x", name=preset))
+        raise SystemExit(t("err.dn1x_placeholder"))
     idx = DENOISE_LEVELS.get(denoise)
     if idx is None:
-        raise SystemExit(f"未知降噪档 '{denoise}'，可选：{', '.join(DENOISE_LEVELS)}")
+        raise SystemExit(t("err.denoise", name=denoise, list=", ".join(DENOISE_LEVELS)))
     if idx not in p["noise"]:
         idx = max(p["noise"])
     path = os.path.join(MODEL_DIR, p["noise"][idx])
     if not os.path.isfile(path):
-        raise SystemExit(f"模型文件不存在：{path}\n请先运行 python tools/download_models.py")
+        raise SystemExit(t("err.model_missing", path=path))
     return path
 
 
@@ -146,10 +137,10 @@ def plan_passes(scale: int, native: int) -> tuple[int, int]:
     """要串几次网络 + 网络实际输出倍率（不足或超出部分最后用 Lanczos 收尾）"""
     if scale == 1:
         if native != 1:
-            raise SystemExit("所选模型不是 1x 模型，无法只降噪；请用 --scale 2 起")
+            raise SystemExit(t("err.not_1x_model"))
         return 1, 1
     if native == 1:
-        raise SystemExit("所选模型只能 1x 降噪，不能放大")
+        raise SystemExit(t("err.only_1x"))
     k = max(1, int(math.ceil(math.log(scale) / math.log(native) - 1e-9)))
     full = native ** k
     if full == scale:
@@ -166,7 +157,7 @@ def resolve_sharpen(preset: str, clear: str | float) -> tuple[float, float]:
     else:
         mult = CLEAR_LEVELS.get(clear)
         if mult is None:
-            raise SystemExit(f"未知清晰度 '{clear}'，可选：{', '.join(CLEAR_LEVELS)}")
+            raise SystemExit(t("err.clear", name=clear, list=", ".join(CLEAR_LEVELS)))
         gain = PRESETS[preset].get("sharp", (0.0, 0.0))[1] * mult
     radius = PRESETS[preset].get("sharp", (0.0, 0.0))[0]
     return radius, gain
@@ -181,5 +172,5 @@ def resolve_bright(bright: str | float) -> float:
         return float(bright)
     f = BRIGHT_LEVELS.get(bright)
     if f is None:
-        raise SystemExit(f"未知明暗档 '{bright}'，可选：{', '.join(BRIGHT_LEVELS)}")
+        raise SystemExit(t("err.bright", name=bright, list=", ".join(BRIGHT_LEVELS)))
     return f

@@ -10,9 +10,11 @@ BigPixels 本地版 —— 网页服务，跟 CLI 共用同一套推理引擎。
     GET  /                          界面
     GET  /fonts/<file>              自托管字体（woff2）
     GET  /demo/<file>               首页示例图
-    GET  /api/presets               预设 / 降噪档 / 倍率 / 设备 / 示例图 / 上限 / 磁盘 / 设置
-    GET  /api/settings              当前设置（保存模式 / 暂存模式）
-    POST /api/settings?keep=1|0     改设置
+    GET  /js/i18n.js                界面上那一堆静态文案（按当前语言现拼）
+    GET  /api/presets               预设 / 降噪档 / 倍率 / 设备 / 示例图 / 上限 / 磁盘 / 设置 / 词条
+    GET  /api/settings              当前设置（保存模式、界面语言）
+    POST /api/settings?keep=1|0     改保存模式
+    POST /api/settings?lang=en      改界面语言（zh / en / ja）
     POST /api/job?preset=&scale=&denoise=&tile=&name=    请求体就是图片二进制
     GET  /api/job/<id>              任务状态（进度、阶段、耗时、指标、工程目录）
     GET  /api/job/<id>/input        原图（?view=1 取缩略预览）
@@ -39,6 +41,12 @@ BigPixels 本地版 —— 网页服务，跟 CLI 共用同一套推理引擎。
     keep=false  结果仅暂存：条数/磁盘超限时按时间淘汰，服务停止时清空整个工程目录，
                 因此界面在完成后会提示「先下载」。
     设置存在 outputs/settings.json，重启后还在。
+
+界面语言（zh / en / ja）
+    界面上给人看的每一句都在 app/locales/<lang>.json 里，代码里不写死文案 ——
+    所以多一种语言 = 多一个 json 文件，不用改逻辑。当前语言跟保存模式一起记在
+    outputs/settings.json：首次运行由 app/server/bootstrap.py 问一次，之后在网页的
+    「更多设置」里切换，命令行也可以 --lang 指定。
 
 三条性能约束，均来自实际踩过的坑：
 
@@ -94,7 +102,7 @@ JS_DIR = os.path.join(WEB_DIR, "js")        # 行为
 
 OUT_ROOT = os.path.join(ROOT, "outputs")
 WORK_DIR = os.path.join(OUT_ROOT, "web")        # 一次工程一个文件夹都在这下面
-SETTINGS_PATH = os.path.join(OUT_ROOT, "settings.json")
+SETTINGS_PATH = U.SETTINGS_PATH                 # 唯一出处是 app/core/paths.py
 os.makedirs(WORK_DIR, exist_ok=True)
 
 MAX_UPLOAD = 40 * 1024 * 1024
@@ -146,8 +154,9 @@ JOBS_LOCK = threading.Lock()
 TASK_Q: "queue.Queue[str]" = queue.Queue()
 TILE_LOCKS: dict[str, threading.Lock] = {}
 
-SETTING_DEF = {"keep": True}      # True = 保存模式（默认），False = 暂存模式
-CFG = dict(SETTING_DEF)
+# 设置（保存模式 / 界面语言）只有一份，落在 outputs/settings.json，
+# 读写都走 app/core/settings.py —— 服务端不再自己开一套，免得两边互相覆盖。
+CFG = U.settings.load()
 
 
 def now() -> float:
@@ -199,28 +208,11 @@ def rm_tree(p: str) -> None:
 
 # ------------------------------------------------------------------ 设置 -- #
 def load_settings() -> dict:
-    cfg = dict(SETTING_DEF)
-    try:
-        with open(SETTINGS_PATH, encoding="utf-8") as f:
-            raw = json.load(f)
-        if isinstance(raw, dict):
-            for k in SETTING_DEF:
-                if isinstance(raw.get(k), bool):
-                    cfg[k] = raw[k]
-    except (OSError, ValueError):
-        pass
-    return cfg
+    return U.settings.load()
 
 
 def save_settings() -> None:
-    try:
-        os.makedirs(OUT_ROOT, exist_ok=True)
-        tmp = SETTINGS_PATH + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(CFG, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, SETTINGS_PATH)
-    except OSError:
-        pass
+    U.settings.save(CFG)
 
 
 # ------------------------------------------------------- 工程文件夹与记录 -- #
@@ -504,15 +496,14 @@ def model_report() -> dict:
 
 def print_model_report(rep: dict) -> None:
     if rep["ok"]:
-        print(f"模型自检：{rep['have']}/{rep['total']} 个权重都在  {rep['dir']}")
+        print(U.t("srv.model.ok", have=rep["have"], total=rep["total"], dir=rep["dir"]))
     else:
-        print(f"模型自检：缺 {len(rep['missing'])} 个权重（共 {rep['total']} 个）")
+        print(U.t("srv.model.bad", n=len(rep["missing"]), total=rep["total"]))
         for f in rep["missing"]:
             print(f"    ✗ {f}")
-        print(f"    下载：{rep['hint']}   （走 hf-mirror 镜像；慢或连不上就先开代理再跑）")
+        print(U.t("srv.model.dl", hint=rep["hint"]))
     probe = os.path.join(U.MODEL_DIR, ".device_probe.json")
-    print("设备自检：有缓存，直接按上次的结论跑" if os.path.isfile(probe)
-          else "设备自检：还没有缓存，第一次出图会顺手在 GPU/CPU 上对一次数值")
+    print(U.t("srv.probe.cached") if os.path.isfile(probe) else U.t("srv.probe.first"))
 
 
 # ------------------------------------------------------------------ 工具 -- #
@@ -776,7 +767,7 @@ def run_job(jid: str) -> None:
         h0, w0 = rgb.shape[:2]
         j["in_w"], j["in_h"] = w0, h0
         j["in_mp"] = mp_of(w0, h0)
-        j["stage"] = "装载模型"
+        j["stage"] = U.t("st.model")
         runner = U.build_runner(j["preset"], j["scale"], j["denoise"],
                                 tile=j["tile"], overlap=OVERLAP)
         passes, net = U.plan_passes(j["scale"], runner.scale)
@@ -784,14 +775,14 @@ def run_job(jid: str) -> None:
         j["device"] = runner.device.upper()
         j["passes"] = passes
         j["net_scale"] = net
-        j["stage"] = "开始推理"
+        j["stage"] = U.t("st.infer")
 
         cur = rgb
         t0 = now()
         for p in range(passes):
             def cb(done, total, el, _p=p):
-                j["stage"] = (f"第 {_p + 1}/{passes} 趟网络" if passes > 1
-                              else "网络推理中")
+                j["stage"] = (U.t("st.pass", n=_p + 1, total=passes) if passes > 1
+                              else U.t("st.net"))
                 j["progress"] = round(100.0 * (_p + done / total) / passes)
                 j["elapsed"] = now() - j["started"]
 
@@ -807,7 +798,7 @@ def run_job(jid: str) -> None:
         # 这一步只加在边缘上（平坦处 rgb≈模糊版，加的是零），所以不会磨出噪点。
         sh_r, sh_g = U.resolve_sharpen(j["preset"], j.get("clear", "normal"))
         if sh_g > 0:
-            j["stage"] = f"收尾锐化（清晰度 {j.get('clear', 'normal')}）"
+            j["stage"] = U.t("st.sharpen", name=U.label("clear", j.get("clear", "normal")))
             cur = U.unsharp(cur, sh_r, sh_g)
         # 注意：这里存的是「引擎参数」，字段名别跟指标 res["sharp_gain"]（锐度倍率，
         # 后面 j.update(measure(...)) 会写进来）撞车 —— 撞了的话界面会把 49.4 这种
@@ -818,11 +809,11 @@ def run_job(jid: str) -> None:
         # 落盘的字段名是 bright_factor，跟指标里的任何字段都不撞。
         k_b = U.resolve_bright(j.get("bright", "off"))
         if abs(k_b - 1.0) > 1e-9:
-            j["stage"] = f"明暗（{U.BRIGHT_LABELS.get(j.get('bright', 'off'), '')}）"
+            j["stage"] = U.t("st.bright", name=U.label("bright", j.get("bright", "off")))
             cur = U.brighten(cur, k_b)
         j["bright_factor"] = round(k_b, 4)
 
-        j["stage"] = "保存结果"
+        j["stage"] = U.t("st.save")
         j["progress"] = 100
         out = os.path.join(d, "result.png")
         U.save_image(cur, out, U.upscale_alpha(alpha, j["scale"]))
@@ -834,7 +825,7 @@ def run_job(jid: str) -> None:
         out8 = (cur * 255 + 0.5).astype(np.uint8)
         del cur                     # 68 MP 的 float32 是 816 MB，指标阶段不再需要它
 
-        j["stage"] = "计量"
+        j["stage"] = U.t("st.measure")
         j.update(measure(rgb, out8, j["scale"], t_net))
 
         # 双三次基线：体积对照和放大镜中格的兜底。整幅落盘，所以只在输得起的尺寸上做。
@@ -851,11 +842,11 @@ def run_job(jid: str) -> None:
             j["has_baseline"] = False      # 输出太大没算，界面上会说明原因
         del out8
 
-        j["stage"] = "生成缩略预览"
+        j["stage"] = U.t("st.preview")
         j["view"] = preview_path(j["out"], os.path.join(d, "preview-result.png"), PREVIEW_MAX)
         j["view_in"] = preview_path(j["src"], os.path.join(d, "preview-input.png"), PREVIEW_MAX)
 
-        j["stage"] = "切块备查"
+        j["stage"] = U.t("st.tiles")
         tiles: dict[str, str] = {}
         for which, p, mpx in (("result", j["out"], j["mp"]),
                               ("input", j["src"], j["in_mp"])):
@@ -967,16 +958,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             p = os.path.join(WEB_DIR, "index.html")
             if not os.path.isfile(p):
-                return self._err(500, "找不到 web/index.html")
+                return self._err(500, U.t("api.no_index"))
             with open(p, "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
+
+        if path == "/js/i18n.js":
+            return self._i18n_js()
 
         for prefix, base in (("/fonts/", FONT_DIR), ("/demo/", DEMO_DIR),
                              ("/css/", CSS_DIR), ("/js/", JS_DIR)):
             if path.startswith(prefix):
                 p = safe_file(base, path[len(prefix):], STATIC_OK[prefix.strip("/")])
                 if not p:
-                    return self._err(404, "文件不存在")
+                    return self._err(404, U.t("api.no_file"))
                 if prefix == "/fonts/":
                     # 字体不会改，缓存一年
                     cache = "public, max-age=31536000, immutable"
@@ -1001,6 +995,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.do_GET()
 
+    def _i18n_js(self):
+        """界面上的静态文案：服务端按当前语言现拼一份 JS，页面同步读它。
+
+        为什么不走 /api/presets 一起发：页面骨架里本来就写着中文（词的兜底），
+        要是等接口回来再换，英文/日文用户会先看见一帧中文再跳成自己的语言。
+        现拼一份同步脚本，页面一遍渲染出来就是对的；顺带把 <html lang> 也定下来。
+        """
+        lang = U.lang_of()
+        payload = {
+            "lang": lang,
+            "locale": {"zh": "zh-CN", "en": "en", "ja": "ja"}.get(lang, "zh-CN"),
+            "names": U.LANG_NAMES,
+            "order": list(U.LANGS),
+            "mb": MAX_UPLOAD // 1048576,
+            "ui": U.web_table(),
+        }
+        body = ("/* 由 app/server/server.py 按当前界面语言现拼，别手改 —— "
+                "要改词去 app/locales/<lang>.json */\n"
+                "window.I18N = " + json.dumps(payload, ensure_ascii=False) + ";\n"
+                "document.documentElement.lang = " + json.dumps(payload["locale"]) + ";\n")
+        return self._send(200, body.encode("utf-8"), "text/javascript; charset=utf-8")
+
     def _presets(self):
         presets = []
         for k, v in U.PRESETS.items():
@@ -1008,26 +1024,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if v.get("dn_only"):
                 files.add(v["dn_only"])
             have = sum(1 for f in files if os.path.isfile(os.path.join(U.MODEL_DIR, f)))
-            presets.append({"id": k, "label": v.get("label", k), "desc": v["desc"],
-                            "tech": v.get("tech", ""), "scale": v.get("hint", 2),
+            presets.append({"id": k, "label": U.label("preset", k),
+                            "desc": U.t(f"preset.{k}.desc"),
+                            "tech": U.t(f"preset.{k}.tech"), "scale": v.get("hint", 2),
                             "ready": have == len(files),
                             "have": have, "total": len(files)})
         return {
             "presets": presets,
-            "denoise": [{"id": "none", "label": "关"}, {"id": "low", "label": "低"},
-                        {"id": "medium", "label": "中"}, {"id": "high", "label": "高"},
-                        {"id": "highest", "label": "最高"}],
-            "clear": [{"id": "soft", "label": U.CLEAR_LABELS["soft"],
-                       "desc": "网络原样，最保险，不引入任何振铃"},
-                      {"id": "normal", "label": U.CLEAR_LABELS["normal"],
-                       "desc": "默认：把软掉的边缘收回来"},
-                      {"id": "crisp", "label": U.CLEAR_LABELS["crisp"],
-                       "desc": "线条最硬。细密的线最清楚，也最容易看出处理痕迹"}],
-            "bright": [{"id": "off", "label": U.BRIGHT_LABELS["off"],
-                        "desc": "默认：不动明暗，最贴原图"},
-                       {"id": "lift", "label": U.BRIGHT_LABELS["lift"],
-                        "desc": "整体提亮 2%，换线上 bigjpg 那种通透感；"
-                                "代价是比原图亮一点，不算「更还原」"}],
+            # 档位名与说明一律按当前语言现取 —— 界面上不再写死任何一种语言
+            "denoise": [{"id": i, "label": U.label("denoise", i)}
+                        for i in ("none", "low", "medium", "high", "highest")],
+            "clear": [{"id": i, "label": U.label("clear", i),
+                       "desc": U.t(f"clear.{i}.desc")} for i in ("soft", "normal", "crisp")],
+            "bright": [{"id": i, "label": U.label("bright", i),
+                        "desc": U.t(f"bright.{i}.desc")} for i in ("off", "lift")],
+            "lang": U.lang_of(),
+            "langs": [{"id": c, "name": U.LANG_NAMES[c]} for c in U.LANGS],
+            "ui": U.web_table(),
             "scales": [2, 4, 8, 16],
             "tiles": [128, 192, 256, 384, 512],
             "providers": U.ort.get_available_providers(),
@@ -1049,12 +1062,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         }
 
     def _samples(self):
-        """首页示例图：文件名到说明的映射写死在这里，界面上当「示例」明示。"""
-        notes = {
-            "lineart": ("线稿", "0.5px 细线、排线、密集网格 —— 最容易糊成灰块"),
-            "text": ("小字截图", "6pt 正文与小字号标签 —— 截图变糊的典型"),
-            "grain": ("噪点照片", "强高斯噪声 —— 用来验证降噪档位"),
-        }
+        """首页示例图：文件名到说明的映射写死在这里，界面上当「示例」明示。
+
+        三张示例的固定文件名（lineart / text / grain）与词条键一一对应；
+        目录里多出来的别的图不编说明，只报文件名。
+        """
+        known = ("lineart", "text", "grain")
         out = []
         if not os.path.isdir(DEMO_DIR):
             return out
@@ -1062,7 +1075,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if os.path.splitext(fn)[1].lower() not in STATIC_OK["demo"]:
                 continue
             stem = os.path.splitext(fn)[0]
-            label, note = notes.get(stem, (stem, ""))
+            label, note = ((U.t(f"sample.{stem}.name"), U.t(f"sample.{stem}.note"))
+                           if stem in known else (stem, ""))
             try:
                 with Image.open(os.path.join(DEMO_DIR, fn)) as im:
                     w, h = im.size
@@ -1070,8 +1084,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 continue
             out.append({"id": stem, "url": f"/demo/{fn}", "name": label,
                         "note": note, "w": w, "h": h})
-        out.sort(key=lambda s: (["lineart", "text", "grain"].index(s["id"])
-                                if s["id"] in ("lineart", "text", "grain") else 9))
+        out.sort(key=lambda s: (list(known).index(s["id"]) if s["id"] in known else 9))
         return out
 
     def _probe(self):
@@ -1092,26 +1105,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with JOBS_LOCK:
             j = JOBS.get(jid)
         if not j:
-            return self._err(404, "任务不存在或已被清理")
+            return self._err(404, U.t("api.no_job"))
         j["keep"] = bool(CFG["keep"])
 
         want_view = (q.get("view") or ["0"])[0] in ("1", "true", "yes")
 
         if what == "detail":
             if j["state"] != "done":
-                return self._err(409, "还没处理完")
+                return self._err(409, U.t("api.busy"))
             return self._detail(j, q)
 
         if what in ("result", "input", "baseline"):
             if j["state"] != "done":
-                return self._err(409, "还没处理完")
+                return self._err(409, U.t("api.busy"))
             key = {"result": "out", "input": "src", "baseline": "baseline"}[what]
             if want_view and what in ("result", "input"):
                 p = view_of(j, what) or j.get(key)
             else:
                 p = j.get(key)
             if not p or not os.path.isfile(p):
-                return self._err(404, "这项产物没有生成")
+                return self._err(404, U.t("api.no_artifact"))
             return self._file(p, "private, max-age=3600",
                               f"{jid}_{'ai' if what == 'result' else what}"
                               f"{os.path.splitext(p)[1]}")
@@ -1131,21 +1144,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         g = lambda k, d="0": (q.get(k) or [d])[0]      # noqa: E731
         layer = g("layer", "result")
         if layer not in ("input", "bicubic", "result"):
-            return self._err(400, "layer 只能是 input / bicubic / result")
+            return self._err(400, U.t("api.bad_layer"))
         try:
             x, y, w, h = (int(g("x")), int(g("y")), int(g("w")), int(g("h")))
         except ValueError:
-            return self._err(400, "x/y/w/h 都得是整数")
+            return self._err(400, U.t("api.bad_int"))
         if w <= 0 or h <= 0:
-            return self._err(400, "w/h 得是正数")
+            return self._err(400, U.t("api.bad_wh"))
         if w > TILE_REQ_MAX or h > TILE_REQ_MAX or w * h > TILE_REQ_MP * 1e6:
-            return self._err(400, f"这一块太大：边长最多 {TILE_REQ_MAX}，总面积最多 {TILE_REQ_MP} MP")
+            return self._err(400, U.t("api.too_big", side=TILE_REQ_MAX, mp=TILE_REQ_MP))
         try:
             dw = int(float(g("dw", "0") or 0))
         except ValueError:
-            return self._err(400, "dw 得是数字")
+            return self._err(400, U.t("api.bad_dw"))
         if dw < 0 or dw > TILE_REQ_MAX:
-            return self._err(400, f"dw 得在 0 到 {TILE_REQ_MAX} 之间")
+            return self._err(400, U.t("api.bad_dw_range", max=TILE_REQ_MAX))
 
         W, H = j["out_w"], j["out_h"]
         x = int(clamp(x, 0, max(0, W - 1)))
@@ -1161,7 +1174,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if im is None:
                 im = read_region(j, "result", x, y, w, h)
             if im is None:
-                return self._err(404, "结果读不出来")
+                return self._err(404, U.t("api.bad_result"))
             if dw and dw < im.width:
                 im = im.resize((dw, dh), Image.LANCZOS)
         else:
@@ -1171,7 +1184,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ih = max(1, int(math.ceil(h / sr)))
             sub = read_region(j, "input", ix, iy, iw, ih)
             if sub is None:
-                return self._err(404, "原图读不出来")
+                return self._err(404, U.t("api.bad_input"))
             if layer == "input":
                 # 原图那一格要的是它自己的像素，交给前端用最近邻放大 —— 别在这儿插值
                 im = sub
@@ -1197,9 +1210,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with JOBS_LOCK:
             j = JOBS.get(jid)
             if not j:
-                return self._err(404, "没有这个任务")
+                return self._err(404, U.t("api.no_job2"))
             if j.get("state") in ("queued", "running"):
-                return self._err(409, "任务还在跑，等它完事再删")
+                return self._err(409, U.t("api.job_running"))
             JOBS.pop(jid, None)
         drop_job(j)
         return self._json({"ok": True, "id": jid})
@@ -1210,13 +1223,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(u.query)
 
         if u.path == "/api/settings":
-            raw = (q.get("keep") or [None])[0]
-            if raw is None:
-                return self._err(400, "要带 keep=1 或 keep=0")
-            CFG["keep"] = raw in ("1", "true", "yes", "on")
-            save_settings()
-            if CFG["keep"]:
-                evict()
+            raw_keep = (q.get("keep") or [None])[0]
+            raw_lang = (q.get("lang") or [None])[0]
+            if raw_keep is None and raw_lang is None:
+                return self._err(400, U.t("api.bad_keep"))
+            if raw_lang is not None:
+                if not U.i18n.valid(raw_lang):
+                    return self._err(400, U.t("api.bad_lang"))
+                U.i18n.set_lang(raw_lang)      # 落盘 + 换掉进程内的当前语言
+                CFG.update(U.settings.load())
+            if raw_keep is not None:
+                CFG["keep"] = raw_keep in ("1", "true", "yes", "on")
+                save_settings()
+                # 切回保存模式时清一次（evict 自己会在保存模式下直接返回）——
+                # 切过去暂存不清：界面上说的是「服务停止即清空」，不是立刻清。
+                if CFG["keep"]:
+                    evict()
             return self._json(CFG)
 
         if u.path != "/api/job":
@@ -1231,23 +1253,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             scale = int((q.get("scale") or ["4"])[0])
             tile = int((q.get("tile") or ["256"])[0])
         except ValueError:
-            return self._err(400, "scale 和 tile 都得是整数")
+            return self._err(400, U.t("api.bad_scale"))
         if preset not in U.PRESETS:
-            return self._err(400, f"没有这个预设：{preset}")
+            return self._err(400, U.t("api.bad_preset", name=preset))
         if clear not in U.CLEAR_LEVELS:
-            return self._err(400, f"没有这个清晰度：{clear}")
+            return self._err(400, U.t("api.bad_clear", name=clear))
         if bright not in U.BRIGHT_LEVELS:
-            return self._err(400, f"没有这个明暗档：{bright}")
+            return self._err(400, U.t("api.bad_bright", name=bright))
         if scale not in (1, 2, 4, 8, 16):
-            return self._err(400, "放大倍数只能是 1 / 2 / 4 / 8 / 16")
+            return self._err(400, U.t("api.bad_scale_val"))
         if tile not in (128, 192, 256, 384, 512):
-            return self._err(400, "分块尺寸只能是 128 / 192 / 256 / 384 / 512")
+            return self._err(400, U.t("api.bad_tile"))
 
         n = int(self.headers.get("Content-Length") or 0)
         if n <= 0:
-            return self._err(400, "没收到图片数据")
+            return self._err(400, U.t("api.no_data"))
         if n > MAX_UPLOAD:
-            return self._err(413, f"图片超过 {MAX_UPLOAD // 1048576} MB 上限")
+            return self._err(413, U.t("api.too_large", mb=MAX_UPLOAD // 1048576))
         data = self.rfile.read(n)
 
         jid = uuid.uuid4().hex[:12]
@@ -1266,10 +1288,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             if os.path.isdir(d) and JOB_DIR_RE.match(os.path.basename(d)):
                 rm_tree(d)
-            return self._err(400, f"这个文件解不开：{e}")
+            return self._err(400, U.t("api.decode_fail", err=e))
 
-        j = {"id": jid, "state": "queued", "progress": 0, "stage": "排队中",
-             "preset": preset, "preset_label": U.PRESETS[preset].get("label", preset),
+        j = {"id": jid, "state": "queued", "progress": 0, "stage": U.t("st.queue"),
+             "preset": preset, "preset_label": U.label("preset", preset),
              "scale": scale, "denoise": denoise, "clear": clear,
              "bright": bright, "tile": tile,
              "name": name, "src": src, "queued": t, "elapsed": 0.0,
@@ -1411,10 +1433,16 @@ def main():
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--keep", choices=("1", "0"), default=None,
-                    help="覆盖设置：1 保存结果（默认），0 暂存")
+                    help=U.t("srv.arg.keep"))
+    ap.add_argument("--lang", choices=list(U.LANGS), default=None,
+                    help=U.t("lang.arghelp"))
     ap.add_argument("--open", dest="open_browser", action="store_true",
-                    help="启动完成后自动打开浏览器（双击启动的脚本使用此项）")
+                    help=U.t("srv.arg.open"))
     a = ap.parse_args()
+
+    # 语言要在任何一句话之前定下来 —— 后面每条提示都按它取词条
+    if a.lang:
+        U.i18n.set_lang(a.lang)
 
     global CFG
     CFG = load_settings()
@@ -1425,10 +1453,10 @@ def main():
     # 1. 先把老版本的散文件收进各自的工程文件夹（幂等，第二次就没得收了）
     st = migrate_layout()
     if st["runs"]:
-        tail = f"，其中 {st['leftover']} 次只有输入、没有结果" if st["leftover"] else ""
-        print(f"整理输出：{st['runs']} 次工程收进各自文件夹（{st['files']} 个文件）{tail}")
+        tail = U.t("srv.migrate.tail", n=st["leftover"]) if st["leftover"] else ""
+        print(U.t("srv.migrate.done", runs=st["runs"], files=st["files"], tail=tail))
     if st["failed"]:
-        print(f"整理输出：有 {st['failed']} 次未能归并，文件仍保留在原处，未做改动")
+        print(U.t("srv.migrate.failed", n=st["failed"]))
 
     threading.Thread(target=worker, daemon=True).start()
     n = restore_jobs()
@@ -1440,29 +1468,27 @@ def main():
     try:
         srv = http.server.ThreadingHTTPServer((a.host, a.port), Handler)
     except OSError as e:
-        sys.exit(f"端口 {a.port} 无法启动：{e}\n请改用其他端口：python app/server/server.py --port 8766")
+        sys.exit(U.t("srv.fail", port=a.port, err=e, alt=a.port + 1))
     srv.daemon_threads = True
 
     if busy:
-        print(f"  ！端口 {a.port} 上已有一个服务在运行（通常是上次的窗口尚未关闭）。")
-        print("     两个进程竞争同一端口时，请求只会发往后启动的那个 —— 若需确认运行的是新代码，")
-        print("     请关闭旧窗口后重新启动，或改用其他端口。")
+        print(U.t("srv.port.busy", port=a.port))
+        print(U.t("srv.port.busy2"))
+        print(U.t("srv.port.busy3"))
 
     base_url, lan_urls = _reachable_urls(a.host, a.port)
-    print(f"BigPixels 本地版已启动：{base_url}")
+    print(U.t("srv.started", url=base_url))
     if lan_urls:
-        print("  同一局域网内亦可访问（手机、平板均可）： " + "  ".join(lan_urls))
-        print("  （默认绑定所有网卡，同一网络内的设备均可访问；仅本机使用时请加 "
-              "--host 127.0.0.1）")
+        print(U.t("srv.lan", urls="  ".join(lan_urls)))
+        print(U.t("srv.lan.note"))
     print_model_report(model_report())
-    print(f"工程目录 {WORK_DIR}"
-          + (f"  ·  已有 {n} 次工程" if n else "")
-          + (f"  ·  ?job=<id> 的链接还能用" if n else ""))
-    print(f"结果保存：{'保存模式 —— 结果保留在上述文件夹中，不自动清理'
-                       if CFG['keep'] else '暂存模式 —— 服务停止即清空工程目录，请及时下载'}")
+    print(U.t("srv.workdir", dir=WORK_DIR)
+          + (U.t("srv.workdir.jobs", n=n) if n else "")
+          + (U.t("srv.workdir.link") if n else ""))
+    print(U.t("srv.keep", mode=U.t("srv.keep.on") if CFG["keep"] else U.t("srv.keep.off")))
     if not CFG["keep"]:
-        print(f"  （设置保存在 {SETTINGS_PATH}；如需改回保存模式，启动后打开界面「更多设置」切换）")
-    print("按 Ctrl+C 停止")
+        print(U.t("srv.keep.note", path=SETTINGS_PATH))
+    print(U.t("srv.ctrl_c"))
 
     if a.open_browser:
         # 已经 bind + listen 过了，所以现在开浏览器不会扑空：
@@ -1472,9 +1498,9 @@ def main():
         url = base_url
         try:
             webbrowser.open(url)
-            print(f"已自动打开浏览器：{url}")
+            print(U.t("srv.opened", url=url))
         except Exception as e:
-            print(f"自动打开浏览器失败（{type(e).__name__}），请手动访问 {url}")
+            print(U.t("srv.open_fail", err=type(e).__name__, url=url))
 
     try:
         srv.serve_forever()
@@ -1484,9 +1510,9 @@ def main():
         srv.server_close()
         if not CFG["keep"]:
             k = wipe_work()
-            print(f"\n暂存模式：已清除 {k} 个工程文件夹")
+            print("\n" + U.t("srv.wiped", n=k))
         else:
-            print(f"\n已停止 —— 结果均保留在 {WORK_DIR}，未做改动")
+            print("\n" + U.t("srv.stopped", dir=WORK_DIR))
 
 
 if __name__ == "__main__":

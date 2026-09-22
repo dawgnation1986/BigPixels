@@ -10,6 +10,26 @@ const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const round2 = v => Math.round(v * 100) / 100;
 
+/* ---------------------------------------------------------- 界面语言
+   给人看的每一句都在 app/locales/<lang>.json 里；服务端按当前语言把它们拼成
+   /js/i18n.js，页面同步读进来（见 server.py 的 _i18n_js）—— 不另外走一趟接口，
+   所以不会先闪一帧中文再跳成自己的语言。
+
+   下面这份 HTML/JS 里还留着中文，那是**兜底**：词条缺一条就退回中文，
+   中文也没有就把键名原样吐出来（界面上冒个 ui.foo，好过白屏）。
+   要改文案请改词条文件，别只改这里。 */
+const I18N = window.I18N || {lang: "zh", locale: "zh-CN", ui: {}, mb: 40};
+const UI = I18N.ui || {};
+const LOC = I18N.locale || "zh-CN";
+const t = (key, vars) => {
+  let s = UI[key];
+  if (s == null) return key;
+  const all = {mb: I18N.mb};
+  if (vars) for (const k in vars) all[k] = vars[k];
+  for (const k in all) s = s.split("{" + k + "}").join(all[k]);
+  return s;
+};
+
 /* 放大镜倍率的单位是「屏幕像素 : 输出像素」。
    1:1 就是输出一像素对屏幕一像素 —— 这一格看到的才是模型的原始像素，
    另外两格是同一块画面上不同算法的结果，尺寸被压到一样，比的就是信息密度。
@@ -31,18 +51,38 @@ const OUT_MP_WARN = 64, OUT_MP_STOP = 160;
 
 /* 触摸设备（手机 / 平板）：没有 hover，也没有鼠标。
    所有「把鼠标放到图上」「拖入图片」的说法在这类设备上都是错的，
-   得换成「点一下」「点这里选图」。文案分两处：
-     · HTML 里另挂一套，写在 data-touch 属性上，由 applyTouchCopy() 抄进去；
-     · JS 现拼的用 T(鼠标说法, 触摸说法) 当场二选一。
-   桌面那一套原样不动 —— 两边说的都得是实话。
+   得换成「点一下」「点这里选图」。桌面那一套原样不动 —— 两边说的都得是实话。
+   文案分两处，但两边都走词条，换语言时才会一起跟得上：
+     · HTML 里另挂一条，写在 data-touch 上，由 applyTouchCopy() 铺进去；
+     · JS 现拼的用 TT(桌面键, 触摸键) 当场二选一。
    判据用 (pointer:coarse) 而不是宽度：带触摸屏的笔记本主指针仍是鼠标，
    不该被当成手机。 */
 const TOUCH = matchMedia("(pointer:coarse)").matches;
-const T = (mouse, touch) => (TOUCH ? touch : mouse);
+/* 同一句在鼠标和手指下说法不同（「把鼠标放到图上」/「点一下图上」）——
+   两边各是一条词条，换语言时才都跟得上。 */
+const TT = (key, touchKey, vars) => t(TOUCH && touchKey ? touchKey : key, vars);
+
+/* HTML 上挂着 data-i18n 的静态文案在这里换语言；-aria / -alt 管的是属性，
+   那两样也是要念给人听的，不能漏。 */
+function applyI18n() {
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.innerHTML = t(el.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-aria]").forEach(el => {
+    el.setAttribute("aria-label", t(el.dataset.i18nAria));
+  });
+  document.querySelectorAll("[data-i18n-alt]").forEach(el => {
+    el.setAttribute("alt", t(el.dataset.i18nAlt));
+  });
+  document.title = t("ui.title");
+  const meta = document.querySelector('meta[name="description"]');
+  if (meta) meta.setAttribute("content", t("ui.meta.desc"));
+}
+
 function applyTouchCopy() {
   if (!TOUCH) return;
   document.querySelectorAll("[data-touch]").forEach(el => {
-    el.textContent = el.dataset.touch;
+    el.innerHTML = t(el.dataset.touch);
   });
 }
 
@@ -81,24 +121,58 @@ const dnLabel = id => {
 /* ---------------------------------------------------------- 反馈 */
 function fail(msg, detail) {
   const el = $("#err");
-  el.innerHTML = "<strong>操作未完成</strong><span>" + msg + "</span>" +
+  el.innerHTML = "<strong>" + t("ui.err.title") + "</strong><span>" + msg + "</span>" +
                  (detail ? "<code>" + detail + "</code>" : "");
   el.hidden = false;
   $("#prog").hidden = true;
   $("#overlay").hidden = true;
   S.busy = false;
   $("#go").disabled = !S.src;
-  $("#go").textContent = S.result ? "重新放大" : "开始放大";
+  $("#go").textContent = S.result ? t("ui.go.again") : t("ui.go");
 }
 const clearErr = () => { $("#err").hidden = true; };
 
+/* ---------------------------------------------------------- 界面语言
+   语言记在服务端（outputs/settings.json），改完要重新载入页面：词条是随页一起发过来的
+   （/js/i18n.js），不重载的话已经渲染出来的那几百个字会停在旧语言上。
+   重载不碰 outputs/ 里的工程 —— 结果、?job= 链接都还在。 */
+function renderLang() {
+  const sel = $("#lang");
+  if (!sel) return;
+  sel.innerHTML = "";
+  (I18N.order || ["zh"]).forEach(code => {
+    const o = document.createElement("option");
+    o.value = code;
+    o.textContent = (I18N.names || {})[code] || code;
+    sel.appendChild(o);
+  });
+  sel.value = I18N.lang;
+  sel.onchange = async () => {
+    const code = sel.value;
+    sel.disabled = true;
+    try {
+      const r = await fetch("/api/settings?lang=" + encodeURIComponent(code), {method: "POST"});
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || ("HTTP " + r.status));
+      }
+      location.reload();
+    } catch (e) {
+      sel.disabled = false;
+      sel.value = I18N.lang;
+      fail(t("ui.err.setting"), String(e.message || e));
+    }
+  };
+}
+
 /* ---------------------------------------------------------- 主题 */
-const THEMES = [["system", "跟随系统"], ["light", "浅色"], ["dark", "深色"]];
-function applyTheme(t) {
+const THEMES = [["system", t("ui.theme.auto")], ["light", t("ui.theme.light")],
+                ["dark", t("ui.theme.dark")]];
+function applyTheme(name) {
   const r = document.documentElement;
-  if (t === "system") { r.removeAttribute("data-theme"); localStorage.removeItem("bigpixels.theme"); }
-  else { r.dataset.theme = t; localStorage.setItem("bigpixels.theme", t); }
-  const hit = THEMES.find(x => x[0] === t) || THEMES[0];
+  if (name === "system") { r.removeAttribute("data-theme"); localStorage.removeItem("bigpixels.theme"); }
+  else { r.dataset.theme = name; localStorage.setItem("bigpixels.theme", name); }
+  const hit = THEMES.find(x => x[0] === name) || THEMES[0];
   $("#themeTxt").textContent = hit[1];
 }
 $("#themer").onclick = () => {
@@ -184,12 +258,14 @@ mirrorGo();
 /* 动作栏左边那半条仪表：抽屉收起来之后，用户得一眼知道
    「选没选图、现在是什么参数」。参数一变就从下面那几个渲染函数过来。 */
 function syncBarSummary() {
-  $("#barName").textContent = S.src ? S.src.name : "尚未选择图片";
+  $("#barName").textContent = S.src ? S.src.name : t("ui.bar.noname");
   const bits = [];
   const p = ((S.cfg && S.cfg.presets) || []).find(x => x.id === S.sel.preset);
   if (p) bits.push(p.label);
   bits.push(S.sel.scale + "×");
-  if (NOISE_PRESETS.includes(S.sel.preset)) bits.push("降噪" + dnLabel(S.sel.denoise));
+  if (NOISE_PRESETS.includes(S.sel.preset)) {
+    bits.push(t("ui.bar.denoise", {name: dnLabel(S.sel.denoise)}));
+  }
   bits.push(clearLabel(S.sel.clear));
   if (S.sel.bright && S.sel.bright !== "off") bits.push(brightLabel(S.sel.bright));
   $("#barSum").textContent = bits.join(" · ");
@@ -229,14 +305,13 @@ function renderEngine(c) {
   const hasDml = c.providers.some(p => /DML|DirectML/i.test(p));
   const dmlOk = dev.includes("dml");
   $("#engine").innerHTML = '<span class="chip"><i class="dot' + (dmlOk ? "" : " warn") +
-    '"></i>在本机 <b>' + (dmlOk ? "GPU + CPU" : "CPU") + " 上推理</b></span>";
-  $("#tileNote").textContent = "显存或内存吃紧时调小。块与块之间重叠 " + c.overlap + " px，用于消除接缝。";
+    '"></i>' + t("ui.engine.ready", {dev: "<b>" + (dmlOk ? "GPU + CPU" : "CPU") + "</b>"}) +
+    "</span>";
+  $("#tileNote").textContent = t("ui.tile.note", {overlap: c.overlap});
   $("#engineNote").textContent =
-    (hasDml
-      ? "本机具备 DirectML，但 waifu2x 系权重在其上会算出错误结果，程序在装载时会进行一次 GPU/CPU 数值比对，" +
-        "不一致则自动退回 CPU；Real-ESRGAN 与 AnimeSharp 留在 GPU 上运行。"
-      : "本机没有 DirectML，全部由 CPU 执行。") +
-    " 可用 provider：" + c.providers.join(" / ") + " · CPU " + c.cpus + " 核。";
+    t(hasDml ? "ui.engine.note.dml" : "ui.engine.note.cpu") + " " +
+    t("ui.engine.note.providers", {list: c.providers.join(" / ")}) + " · " +
+    t("ui.engine.note.cpus", {n: c.cpus});
 }
 
 /* ---------------------------------------------------------- 模型自检 */
@@ -251,17 +326,18 @@ function renderModelWarn(c) {
   }
   const ready = c.presets.filter(p => p.ready).length;
   box.hidden = false;
-  box.innerHTML = "<strong>模型文件不全，仅 " + ready + " / " + c.presets.length +
-    " 档可用</strong><span>缺少以下 " + m.missing.length + " 个权重（位于 " + esc(m.dir) + "）：</span>" +
+  box.innerHTML = "<strong>" + t("ui.model.warn.title", {have: ready, total: c.presets.length}) +
+    "</strong><span>" + t("ui.model.warn.body", {n: m.missing.length, dir: esc(m.dir)}) + "</span>" +
     "<code>" + m.missing.map(esc).join("<br>") + "</code>" +
-    "<span>在项目目录下运行以下命令即可下载：</span><code>" + esc(m.hint) + "</code>" +
-    "<span>下载走 hf-mirror 镜像；速度过慢或无法连接时，请先配置代理再重试。</span>";
+    "<span>" + t("ui.model.warn.cmd") + "</span><code>" + esc(m.hint) + "</code>" +
+    "<span>" + t("ui.model.warn.note") + "</span>";
 }
 
 /* ---------------------------------------------------------- 保存 / 暂存 */
 /* 默认保存：结果就留在工程文件夹里，服务一条都不自动删。
    切到暂存：结果只在服务运行期间留着，停了就清空 —— 所以完成后会盯着你下载。 */
-const KEEPS = [{id: "keep", label: "保存"}, {id: "temp", label: "暂存"}];
+const KEEPS = [{id: "keep", label: t("ui.keep.save")},
+               {id: "temp", label: t("ui.keep.temp")}];
 function renderKeep(keep) {
   S.keep = keep !== false;
   radioGroup($("#keepMode"), "keep", KEEPS, S.keep ? "keep" : "temp",
@@ -271,17 +347,17 @@ function renderKeep(keep) {
 function paintKeep() {
   const k = S.keep, work = (S.cfg && S.cfg.work_rel) || "outputs/web/";
   $("#keepNote").textContent = k
-    ? "结果存入 " + work + "<时间戳>_<图名>_<任务号>/，服务不执行任何自动清理。"
-    : "结果仅暂存：服务停止即清空整个工程目录，界面上也不会保留副本，出图后请及时下载。";
+    ? t("ui.keep.note.save", {work: work})
+    : t("ui.keep.note.temp");
   const d = (S.cfg && S.cfg.disk) || {};
   const used = (d.used || 0) / 1048576;
   const n = d.jobs || 0, cap = 16;
   $("#diskNote").textContent = k
-    ? "现在已占 " + (used < 1024 ? used.toFixed(0) + " MB" : (used / 1024).toFixed(2) + " GB") +
-      " / " + n + " 次工程，不清理。累积过多时请自行删除该目录下的文件夹。"
-    : "暂存模式最多留 " + fmtBytes((S.cfg && S.cfg.limits && S.cfg.limits.disk_temp) || 1572864000) +
-      " 或 " + cap + " 次，超出后按时间从最早的开始清理。" +
-      (n > cap ? " 当前已有 " + n + " 次，下一次出图将先清除最早的 " + (n - cap) + " 次。" : "");
+    ? t("ui.disk.keep", {size: used < 1024 ? used.toFixed(0) + " MB" : (used / 1024).toFixed(2) + " GB",
+                         n: n})
+    : t("ui.disk.temp.cap", {count: cap,
+                             size: fmtBytes((S.cfg && S.cfg.limits && S.cfg.limits.disk_temp) || 1572864000)}) +
+      (n > cap ? t("ui.disk.temp.warn", {n: n, over: n - cap}) : "");
 }
 async function setKeep(keep) {
   try {
@@ -292,7 +368,7 @@ async function setKeep(keep) {
     paintKeep();
     if (S.result) showSaveNote(S.result);
   } catch (e) {
-    fail("设置修改失败。", String(e.message || e));
+    fail(t("ui.err.setting"), String(e.message || e));
   }
 }
 const esc = s => String(s == null ? "" : s)
@@ -309,14 +385,12 @@ function showSaveNote(j) {
   if (j.keep === false || !S.keep) {
     box.className = "notice";
     box.hidden = false;
-    box.innerHTML = "<b>暂存模式：本结果不会保留在磁盘上。</b>服务一旦停止，" + esc(path) +
-      " 下的工程文件夹将一并清除，请立即点击右侧「下载」保存到目标位置。";
+    box.innerHTML = t("ui.save.note.temp", {dir: esc(path)});
   } else {
     box.className = "notice ok";
     box.hidden = false;
-    box.innerHTML = "结果已经存进 <b>" + esc(path) + "</b>" +
-      (folder ? "<code>" + esc(folder) + "/</code>" : "") +
-      "，不会被自动清理。如需存档，建议另行下载一份。";
+    box.innerHTML = t("ui.save.note.keep",
+      {dir: esc(path) + (folder ? "<code>" + esc(folder) + "/</code>" : "")});
   }
 }
 
@@ -342,18 +416,16 @@ function setSource(src) {
   $("#ledgerWrap").hidden = true;
   $("#saveNote").hidden = true;
   $("#dl").setAttribute("aria-disabled", "true");
-  $("#dlText").textContent = "下载结果";
+  $("#dlText").textContent = t("ui.btn.download");
   $("#fs").setAttribute("aria-disabled", "true");
   S.ptr = null;
   S.view = null;
   S.pending = null;
   S.tok++;
-  $("#stageNote").textContent = T(
-    "结果生成后，将鼠标移到图上，下方放大镜将跟随该位置。",
-    "结果生成后，点一下图上想看的位置，下方放大镜会跟随到该区域。");
+  $("#stageNote").innerHTML = TT("ui.stagenote.wait", "ui.stagenote.wait.touch");
   clearErr();
   $("#go").disabled = false;
-  $("#go").textContent = "开始放大";
+  $("#go").textContent = t("ui.go");
   updateReadout();
 }
 
@@ -377,7 +449,7 @@ function dropSource() {
   S.pending = null;
   S.tok++;
   $("#go").disabled = true;
-  $("#go").textContent = "开始放大";
+  $("#go").textContent = t("ui.go");
   clearErr();
   updateReadout();
 }
@@ -385,12 +457,12 @@ function dropSource() {
 function acceptFile(f) {
   if (!f) return;
   if (!/^image\//.test(f.type || "")) {
-    return fail("这不是图片文件。", "请选择 PNG / JPG / WEBP / TIFF，或将图片文件拖入。");
+    return fail(t("ui.err.notimage"), t("ui.err.notimage.hint"));
   }
   const cap = (S.cfg && S.cfg.limits.max_upload) || 41943040;
   if (f.size > cap) {
-    return fail("图片过大，超出单张上限。",
-                "上限 " + fmtBytes(cap) + "，当前 " + fmtBytes(f.size) + "。请先裁剪或压缩后重试。");
+    return fail(t("ui.err.toobig"),
+                t("ui.err.toobig.hint", {cap: fmtBytes(cap), size: fmtBytes(f.size)}));
   }
   const url = URL.createObjectURL(f);
   const im = new Image();
@@ -398,7 +470,7 @@ function acceptFile(f) {
                                blob: f, bytes: f.size, revoke: true});
   im.onerror = () => {
     URL.revokeObjectURL(url);
-    fail("该文件无法解码。", "可能扩展名与内容不符，或编码方式不受支持。请改用 PNG / JPG 重试。");
+    fail(t("ui.err.decode"), t("ui.err.decode.hint"));
   };
   im.src = url;
 }
@@ -410,10 +482,10 @@ $("#drop").onkeydown = e => {
 $("#file").onchange = e => { acceptFile(e.target.files[0]); e.target.value = ""; };
 $("#replace").onclick = () => $("#file").click();
 $("#clear").onclick = dropSource;
-["dragenter", "dragover"].forEach(t => $("#drop").addEventListener(t, e => {
+["dragenter", "dragover"].forEach(ev => $("#drop").addEventListener(ev, e => {
   e.preventDefault(); $("#drop").classList.add("over");
 }));
-["dragleave", "drop"].forEach(t => $("#drop").addEventListener(t, e => {
+["dragleave", "drop"].forEach(ev => $("#drop").addEventListener(ev, e => {
   e.preventDefault(); $("#drop").classList.remove("over");
 }));
 $("#drop").addEventListener("drop", e => acceptFile(e.dataTransfer.files[0]));
@@ -441,7 +513,7 @@ function renderSamples(c) {
         const blob = await r.blob();
         setSource({url: s.url, name: s.id + ".png", w: s.w, h: s.h, blob, bytes: blob.size});
       } catch (err) {
-        fail("无法获取示例图。", String(err.message || err));
+        fail(t("ui.err.samples"), String(err.message || err));
       }
     };
     row.appendChild(b);
@@ -461,10 +533,11 @@ function renderPresets(c) {
     S.sel.preset,
     it => '<span class="box"></span><span class="txt"><b>' + it.p.label + "</b><small>" +
           it.p.desc + "</small></span><em>" +
-          (it.p.ready ? it.p.scale + "×" : "缺权重 " + it.p.have + "/" + it.p.total) + "</em>",
+          (it.p.ready ? it.p.scale + "×"
+                      : t("ui.preset.missing", {have: it.p.have, total: it.p.total})) + "</em>",
     id => { S.sel.preset = id; applyPresetRules(); clearErr(); });
   const ready = c.presets.filter(p => p.ready).length;
-  $("#modelCount").textContent = ready + " / " + c.presets.length + " 个可用";
+  $("#modelCount").textContent = t("ui.preset.count", {ready: ready, total: c.presets.length});
   applyPresetRules();
 }
 
@@ -478,8 +551,7 @@ function applyPresetRules() {
     if (inp) inp.disabled = !has;
   });
   $("#denoiseNote").hidden = has;
-  $("#denoiseNote").textContent = has ? "" :
-    "Real-ESRGAN 与 AnimeSharp 各自只有一份权重、不含降噪档，本项对它们不生效。";
+  $("#denoiseNote").textContent = has ? "" : t("ui.denoise.note");
   syncBarSummary();
 }
 
@@ -565,8 +637,8 @@ function defaultZoom(j) {
 
 const zoomPos = z => {                       // 倍率 → 滑块位置（对数刻度，两端都跑得动）
   const r = zoomRange(S.result);
-  const t = Math.log(z / r.zMin) / Math.log(r.zMax / r.zMin || 2);
-  return Math.round(clamp(t, 0, 1) * 1000);
+  const pos = Math.log(z / r.zMin) / Math.log(r.zMax / r.zMin || 2);
+  return Math.round(clamp(pos, 0, 1) * 1000);
 };
 const posZoom = p => {
   const r = zoomRange(S.result);
@@ -606,10 +678,10 @@ function renderZoom() {
 function renderTiles(c) {
   const sel = $("#tile");
   sel.innerHTML = "";
-  c.tiles.forEach(t => {
+  c.tiles.forEach(px => {
     const o = document.createElement("option");
-    o.value = t;
-    o.textContent = t + " px";
+    o.value = px;
+    o.textContent = px + " px";
     sel.appendChild(o);
   });
   sel.value = S.sel.tile;
@@ -620,23 +692,22 @@ function updateReadout() {
   const out = $("#readout"), warn = $("#sizeWarn");
   syncBarSummary();
   if (!S.src) {
-    out.innerHTML = "<span>载入图片后这里将显示输出尺寸</span>";
+    out.innerHTML = "<span>" + t("ui.readout.empty") + "</span>";
     warn.hidden = true;
     return;
   }
   const w = S.src.w * S.sel.scale, h = S.src.h * S.sel.scale, m = mp(w, h);
   out.innerHTML =
     "<b>" + S.src.w + " × " + S.src.h + "</b><span class=\"arrow\">→</span>" +
-    "<b>" + w.toLocaleString("zh-CN") + " × " + h.toLocaleString("zh-CN") + "</b>" +
+    "<b>" + w.toLocaleString(LOC) + " × " + h.toLocaleString(LOC) + "</b>" +
     "<span>·</span><span>" + mp(S.src.w, S.src.h).toFixed(2) + " → " + m.toFixed(1) + " MP</span>";
   if (m >= OUT_MP_STOP) {
     warn.hidden = false;
-    warn.innerHTML = "输出将达到 <b>" + m.toFixed(0) + " MP</b>（" + w.toLocaleString("zh-CN") + " × " +
-      h.toLocaleString("zh-CN") + "），本机无法处理。请改用更小的倍率，或先裁剪原图 —— 上限 " +
-      OUT_MP_STOP + " MP。";
+    warn.innerHTML = t("ui.mp.warn", {mp: m.toFixed(0), w: w.toLocaleString(LOC),
+                                      h: h.toLocaleString(LOC), cap: OUT_MP_STOP});
   } else if (m >= OUT_MP_WARN) {
     warn.hidden = false;
-    warn.innerHTML = "输出 " + m.toFixed(0) + " MP 偏大，内存与耗时都会明显增加。";
+    warn.innerHTML = t("ui.mp.hint", {mp: m.toFixed(0)});
   } else {
     warn.hidden = true;
   }
@@ -647,7 +718,7 @@ function updateReadout() {
 async function sourceBlob() {
   if (S.src.blob) return S.src.blob;
   const r = await fetch(S.src.url);
-  if (!r.ok) throw new Error("无法读取源文件（HTTP " + r.status + "）");
+  if (!r.ok) throw new Error(t("ui.err.read", {code: r.status}));
   return await r.blob();
 }
 
@@ -656,20 +727,20 @@ function setProg(pct, stage, model) {
   $("#fill").style.width = p + "%";
   $("#ruleBar").setAttribute("aria-valuenow", p);
   $("#ovPct").textContent = p + "%";
-  $("#progStage").textContent = stage || "处理中";
-  $("#ovLbl").textContent = stage || "处理中";
+  $("#progStage").textContent = stage || t("ui.prog.working");
+  $("#ovLbl").textContent = stage || t("ui.prog.working");
   if (model != null) $("#progModel").textContent = model;
 }
 
 function markPasses(n) {
   if (n === S.ticks) return;
   S.ticks = n;
-  const t = $("#ticks");
-  t.innerHTML = "";
+  const box = $("#ticks");
+  box.innerHTML = "";
   for (let i = 1; i < n; i++) {
     const mark = document.createElement("i");
     mark.style.left = (100 * i / n) + "%";
-    t.appendChild(mark);
+    box.appendChild(mark);
   }
 }
 
@@ -683,14 +754,14 @@ async function start() {
   S.result = null;
   S.ticks = 0;
   $("#go").disabled = true;
-  $("#go").textContent = "放大中…";
+  $("#go").textContent = t("ui.prog.upscale");
   $("#loupe").hidden = true;
   $("#ledgerWrap").hidden = true;
   $("#saveNote").hidden = true;
   $("#prog").hidden = false;
   $("#overlay").hidden = false;
-  setProg(0, "正在提交给推理引擎", "");
-  $("#live").textContent = "开始处理";
+  setProg(0, t("ui.prog.submit"), "");
+  $("#live").textContent = t("ui.prog.start");
 
   try {
     const blob = await sourceBlob();
@@ -707,7 +778,7 @@ async function start() {
     poll();
   } catch (e) {
     S.busy = false;
-    fail("任务提交失败。", String(e.message || e));
+    fail(t("ui.err.submit"), String(e.message || e));
   }
 }
 $("#go").onclick = start;
@@ -720,10 +791,11 @@ async function poll() {
     if (j.state === "error") {
       clearInterval(S.timer);
       S.busy = false;
-      return fail("推理引擎报错。", j.msg || "");
+      return fail(t("ui.err.engine"), j.msg || "");
     }
     if (j.passes) markPasses(j.passes);
-    const info = [j.model, j.device, j.passes > 1 ? "串联 " + j.passes + " 次" : null]
+    const info = [j.model, j.device,
+                  j.passes > 1 ? t("ui.pass.serial", {n: j.passes}) : null]
       .filter(Boolean).join("  ·  ");
     setProg(j.progress, j.stage, info);
     $("#progTime").textContent = (j.elapsed || 0).toFixed(1) + " s";
@@ -737,7 +809,7 @@ async function poll() {
   } catch (e) {
     clearInterval(S.timer);
     S.busy = false;
-    fail("查询任务状态失败。", String(e.message || e));
+    fail(t("ui.err.poll"), String(e.message || e));
   }
 }
 
@@ -758,8 +830,8 @@ function showResult(j) {
   $("#imgBefore").src = base + "/input?view=1";
   $("#cornerL").hidden = false;
   $("#cornerR").hidden = false;
-  $("#cornerL").textContent = "原图 " + j.in_w + "×" + j.in_h;
-  $("#cornerR").textContent = "AI " + j.out_w + "×" + j.out_h;
+  $("#cornerL").textContent = t("ui.corner.before", {w: j.in_w, h: j.in_h});
+  $("#cornerR").textContent = t("ui.corner.after", {w: j.out_w, h: j.out_h});
   $("#divider").hidden = false;
   $("#grip").hidden = false;
   setSplit(50);
@@ -769,10 +841,9 @@ function showResult(j) {
   dl.href = base + "/result";
   dl.setAttribute("download", stem + "_" + j.scale + "x_ai.png");
   dl.setAttribute("aria-disabled", "false");
-  $("#dlText").textContent = "下载 " + j.out_w + "×" + j.out_h + " PNG";
+  $("#dlText").textContent = t("ui.dl.file", {w: j.out_w, h: j.out_h});
 
-  $("#stageNote").textContent =
-    "拖动分割线对比；需要放大查看请按「全屏对比」。光台上为缩略预览，像素级对照请见下方放大镜。";
+  $("#stageNote").innerHTML = t("ui.stagenote.ready");
   $("#loupe").hidden = false;
   $("#ledgerWrap").hidden = false;
   $("#fs").setAttribute("aria-disabled", "false");
@@ -780,10 +851,10 @@ function showResult(j) {
   renderLedger(j);
   showSaveNote(j);
 
-  $("#go").textContent = "重新放大";
+  $("#go").textContent = t("ui.go.again");
   $("#go").disabled = false;
   updateReadout();
-  $("#live").textContent = "处理完成";
+  $("#live").textContent = t("ui.prog.done");
   // 把任务号写进地址栏：刷新不丢结果，也能直接把这一份发给别人
   try { history.replaceState(null, "", location.pathname + "?job=" + j.id); } catch (e) {}
 }
@@ -808,9 +879,7 @@ function prepareLoupe(j, base) {
   $("#capBic").textContent = j.out_w + "×" + j.out_h;
   $("#capAi").textContent = j.out_w + "×" + j.out_h;
   $("#bicNote").hidden = j.has_baseline;
-  $("#bicNote").textContent = j.has_baseline ? "" :
-    "中间这一格为实时计算，只计算当前查看的小块，因此输出再大也可对照。" +
-    "整幅双三次 PNG 落盘开销过大，本次未保存，计量表中「体积」一行留空。";
+  $("#bicNote").textContent = j.has_baseline ? "" : t("ui.bic.note");
   updateLoupe();
 }
 
@@ -915,14 +984,14 @@ function fetchTile(t, z) {
    看着就是「框框没跟到鼠标那儿」。视窗伸到图外时框也跟着出去，
    被光台的 overflow:hidden 裁掉半截，那正是它该有的样子。 */
 function drawLoupe(g) {
-  const t = S.view;
-  if (!t || !g) return;
+  const tile = S.view;
+  if (!tile || !g) return;
   const panes = $("#panes");
-  panes.style.setProperty("--tilew", (t.w * g.z) + "px");
+  panes.style.setProperty("--tilew", (tile.w * g.z) + "px");
   /* dx/dy 会是正的：视窗伸到图外时，画面得往右/往下让出那段留白。
      别像以前那样夹到 ≤0 —— 夹了就等于把画面又拽回图里，「贴边」这件事就白做了。 */
-  panes.style.setProperty("--dx", clamp((t.x - g.vx) * g.z, -t.w * g.z, t.w * g.z) + "px");
-  panes.style.setProperty("--dy", clamp((t.y - g.vy) * g.z, -t.h * g.z, t.h * g.z) + "px");
+  panes.style.setProperty("--dx", clamp((tile.x - g.vx) * g.z, -tile.w * g.z, tile.w * g.z) + "px");
+  panes.style.setProperty("--dy", clamp((tile.y - g.vy) * g.z, -tile.h * g.z, tile.h * g.z) + "px");
 
   const cross = $("#cross");
   cross.hidden = false;
@@ -946,16 +1015,16 @@ function updateLoupe() {
   /* 这行说明也在跟光台抢同一屏的高度：原来 12.5 px 会折成两行、白占 39 px。
      字号在 app.css 里降到 11 px（一行放得下约 77 个全角字），文案也只留必要的：
      换来的 21 px 就是「光台和放大镜同屏」里的一份。改文案记得两边一起看。 */
-  let head, tail = " 这块 " + size + "。";
+  let head, tail = t("ui.loupe.tail", {size: size});
   if (g.z > 1) {
-    head = "一格 = 输出一像素 × " + round2(g.z) + "，显示的是「AI 放大」的观感，而非其真实像素。";
+    head = t("ui.loupe.note.zoomN", {z: round2(g.z)});
   } else if (g.z === 1) {
-    head = "一格恰好对应一个输出像素（1:1）：多出的细节是模型补出的还是原本就有，一比即可分辨。";
+    head = t("ui.loupe.note.zoom1");
   } else {
-    head = "将 " + size + " 压入一格（约 1:" + Math.round(1 / g.z) + "），用于观察整体结构；需要查看单个像素请按「1:1」。";
+    head = t("ui.loupe.note.far", {size: size, z: Math.round(1 / g.z)});
     tail = "";
   }
-  $("#zoomNote").textContent = "三格同块同尺寸。" + head + tail;
+  $("#zoomNote").textContent = t("ui.loupe.note.same") + head + tail;
 }
 
 /* pointermove 一秒能来好几百次，合并成每帧最多算一次 */
@@ -1019,7 +1088,7 @@ function setSplit(p) {
   S.split = clamp(p, 0, 100);
   $("#viewport").style.setProperty("--split", S.split + "%");
   $("#grip").setAttribute("aria-valuenow", Math.round(S.split));
-  $("#grip").setAttribute("aria-valuetext", "原图露出 " + Math.round(S.split) + "%");
+  $("#grip").setAttribute("aria-valuetext", t("ui.grip.valuetext", {p: Math.round(S.split)}));
 }
 (function wireSplit() {
   let dragging = false, raf = 0, px = 0;
@@ -1062,7 +1131,7 @@ function moveLoupe(intoStage) {
 function refreshFs() {
   const on = document.fullscreenElement === STAGE;
   moveLoupe(on);
-  $("#fsText").textContent = on ? "退出全屏" : "全屏对比";
+  $("#fsText").textContent = on ? t("ui.btn.exitfullscreen") : t("ui.btn.fullscreen");
   $("#fs").setAttribute("aria-pressed", on ? "true" : "false");
   if (S.result) {
     updateLoupe();
@@ -1084,7 +1153,7 @@ $("#fs").onclick = () => {
     if (document.fullscreenElement) document.exitFullscreen();
     else if (STAGE.requestFullscreen) STAGE.requestFullscreen();
   } catch (e) {
-    fail("本浏览器不支持全屏。", "可直接放大窗口，或按 F 键重试。");
+    fail(t("ui.err.nofullscreen"), t("ui.err.nofullscreen.hint"));
   }
 };
 document.addEventListener("fullscreenchange", refreshFs);
@@ -1116,7 +1185,7 @@ const row = (label, value, note, dim) =>
   (note ? "<p>" + note + "</p>" : "") + "</div>";
 const group = (title, rows) => '<div class="lgroup"><h3>' + title + "</h3>" + rows + "</div>";
 const U = s => '<span class="u">' + s + "</span>";
-const CN = n => n.toLocaleString("zh-CN");
+const CN = n => n.toLocaleString(LOC);
 /* 数值真在，才格式化它。整理时捡回来的旧记录本来就缺项 —— 缺就显示「—」，
    不编一个看着像真的数出来。 */
 const num = (v, f) => (typeof v === "number" && isFinite(v) ? f(v) : "—");
@@ -1124,59 +1193,64 @@ const dim2 = j => (j.in_w != null && j.in_h != null) ? j.in_w + " × " + j.in_h 
 
 function renderLedger(j) {
   const size =
-    row("输入", dim2(j) + U(j.in_mp != null ? " · " + j.in_mp.toFixed(2) + " MP · " + fmtBytes(j.in_bytes)
-                            : (j.in_bytes != null ? " · " + fmtBytes(j.in_bytes) : ""))) +
-    row("输出", (j.out_w != null ? CN(j.out_w) + " × " + CN(j.out_h) : "—") +
+    row(t("ui.ledger.input"),
+        dim2(j) + U(j.in_mp != null ? " · " + j.in_mp.toFixed(2) + " MP · " + fmtBytes(j.in_bytes)
+                                    : (j.in_bytes != null ? " · " + fmtBytes(j.in_bytes) : ""))) +
+    row(t("ui.ledger.output"),
+        (j.out_w != null ? CN(j.out_w) + " × " + CN(j.out_h) : "—") +
         U(j.mp != null ? " · " + j.mp.toFixed(2) + " MP · " + fmtBytes(j.out_bytes) : "")) +
-    row("倍率", (j.scale != null ? "×" + j.scale : "—") + U(" · 实测 ×" + num(j.scale_actual, v => v)),
+    row(t("ui.ledger.scale"),
+        (j.scale != null ? "×" + j.scale : "—") +
+        U(t("ui.ledger.scale.actual", {v: num(j.scale_actual, v => v)})),
         j.passes > 1
-          ? "网络原生 ×" + j.net_scale + "，因此串联 " + j.passes + " 次；不足的部分由 Lanczos 补齐至 ×" + j.scale + "。"
-          : (j.passes === 1 ? "一次网络推理即达到目标倍率，无额外插值。" : ""));
+          ? t("ui.ledger.scale.native", {native: j.net_scale, passes: j.passes, scale: j.scale})
+          : (j.passes === 1 ? t("ui.ledger.scale.one") : ""));
 
   const run =
-    row("模型", (j.preset_label || "—") + U(" · 降噪 " + (j.denoise ? dnLabel(j.denoise) : "—"))) +
-    row("清晰度", clearLabel(j.clear || "normal") +
-        U(j.sharp_amount ? " · 收尾锐化 半径 " + j.sharp_radius + " px / 增益 " + j.sharp_amount : ""),
-        j.sharp_amount ? "网络输出的边缘为渐变过渡，本步仅将边缘收回；平坦区不变，因此不会磨出噪点。" : "本档未做任何锐化，输出即网络的原始结果。") +
-    row("明暗", brightLabel(j.bright || "off") +
-        U(j.bright_factor && j.bright_factor !== 1 ? " · 整体 ×" + j.bright_factor : ""),
+    row(t("ui.ledger.model"),
+        (j.preset_label || "—") +
+        U(t("ui.ledger.denoise", {name: j.denoise ? dnLabel(j.denoise) : "—"}))) +
+    row(t("ui.ledger.clear"), clearLabel(j.clear || "normal") +
+        U(j.sharp_amount ? t("ui.ledger.sharp", {r: j.sharp_radius, g: j.sharp_amount}) : ""),
+        j.sharp_amount ? t("ui.ledger.clear.note") : t("ui.ledger.clear.none")) +
+    row(t("ui.ledger.bright"), brightLabel(j.bright || "off") +
+        U(j.bright_factor && j.bright_factor !== 1
+          ? t("ui.ledger.bright.mult", {mult: j.bright_factor}) : ""),
         j.bright_factor && j.bright_factor !== 1
-          ? "本步会使输出比原图略亮，换来的是线上那种通透观感，并非更接近原图。要求最贴近原图时请切回「原样」。"
-          : "未调整明暗，输出与原图亮度一致。") +
-    row("后端", (j.device || "—") + U(" · 分块 " + num(j.tile, v => v) + " px")) +
-    row("权重", String(j.model || "").replace(/\.onnx$/, "") || "—", null, true);
+          ? t("ui.ledger.bright.note")
+          : t("ui.ledger.bright.none")) +
+    row(t("ui.ledger.backend"),
+        (j.device || "—") + U(t("ui.ledger.tile", {tile: num(j.tile, v => v) + " px"}))) +
+    row(t("ui.ledger.weights"), String(j.model || "").replace(/\.onnx$/, "") || "—", null, true);
 
   const time =
-    row("总耗时", num(j.elapsed, v => v.toFixed(1)) + U(" s")) +
-    row("其中推理", num(j.t_net, v => v.toFixed(1)) + U(" s")) +
-    row("吞吐", num(j.mps, v => v.toFixed(2)) + U(" MP/s"),
-        j.mps != null ? "输出像素数除以纯推理时间。本机为 " + j.device + "，因此该数值即其真实速度。" : "");
+    row(t("ui.ledger.elapsed"), num(j.elapsed, v => v.toFixed(1)) + U(" s")) +
+    row(t("ui.ledger.net"), num(j.t_net, v => v.toFixed(1)) + U(" s")) +
+    row(t("ui.ledger.mps"), num(j.mps, v => v.toFixed(2)) + U(" MP/s"),
+        j.mps != null ? t("ui.ledger.mps.note", {dev: j.device}) : "");
 
   const quality =
-    row("回环一致", num(j.rt_ssim, v => "SSIM " + v) +
+    row(t("ui.ledger.ssim"), num(j.rt_ssim, v => "SSIM " + v) +
         U(j.rt_psnr != null ? " · PSNR " + j.rt_psnr + " dB" : ""),
-        j.rt_ssim != null ? "将结果缩回原尺寸后与原图比较。越接近 1 表示内容被改动越少；数值明显下降则说明模型在凭空生成内容。" : "") +
-    row("锐度增益", (j.sharp_gain == null ? "—" : "×" + j.sharp_gain) + U(" · 对照双三次"),
+        j.rt_ssim != null ? t("ui.ledger.ssim.note") : "") +
+    row(t("ui.ledger.sharpness"),
+        (j.sharp_gain == null ? "—" : "×" + j.sharp_gain) + U(t("ui.ledger.sharpness.of")),
         j.sharp_gain != null
-          ? "同一块 512×512 区域内拉普拉斯响应方差之比。原图 " + num(j.sharp_out, v => v) +
-            "，双三次 " + num(j.sharp_bicubic, v => v) + "。"
+          ? t("ui.ledger.sharpness.note", {src: num(j.sharp_out, v => v),
+                                           bic: num(j.sharp_bicubic, v => v)})
           : "") +
-    row("体积", fmtBytes(j.out_bytes) +
-        U(j.bicubic_bytes != null ? " · 双三次 " + fmtBytes(j.bicubic_bytes) : " · 双三次没算"),
+    row(t("ui.ledger.bytes"), fmtBytes(j.out_bytes) +
+        U(j.bicubic_bytes != null ? t("ui.ledger.bytes.cmp", {size: fmtBytes(j.bicubic_bytes)})
+                                  : t("ui.ledger.bytes.none")),
         j.bicubic_bytes != null
-          ? "同为 PNG 无损编码。多出的体积即模型补出的细节及其带出的噪声。"
-          : (j.mp != null
-              ? "输出 " + j.mp.toFixed(0) + " MP，整幅双三次 PNG 需现编码一次才能得到体积，开销过大故跳过。" +
-                "放大镜中间那一格为按需实时计算，与此无关，可正常查看。"
-              : ""));
+          ? t("ui.ledger.bytes.note")
+          : (j.mp != null ? t("ui.ledger.bytes.skip", {mp: j.mp.toFixed(0)}) : ""));
 
   // 整理输出目录时捡回来的旧结果没有日志，上面那些「—」得先解释一句，不然像坏了
-  const head = j.recovered
-    ? '<p class="hint" style="padding-block-end:10px">这是整理输出目录时恢复的旧结果 —— ' +
-      "当时的日志未保留，耗时与锐度等指标无法补算，因此显示「—」；尺寸、体积由文件本身读出。</p>"
-    : "";
-  $("#ledger").innerHTML = head + group("尺寸", size) + group("运行", run) +
-                           group("时间", time) + group("质量", quality);
+  const head = j.recovered ? '<p class="hint" style="padding-block-end:10px">' +
+    t("ui.ledger.recovered") + "</p>" : "";
+  $("#ledger").innerHTML = head + group(t("ui.ledger.mp"), size) + group(t("ui.ledger.runs"), run) +
+                           group(t("ui.ledger.time"), time) + group(t("ui.ledger.quality"), quality);
 }
 
 /* ---------------------------------------------------------- 启动 */
@@ -1212,10 +1286,12 @@ function restoreJob(id) {
 
 (function boot() {
   const q = new URLSearchParams(location.search);
+  applyI18n();                  // 静态文案先换成当前语言，再谈别的
   const theme = q.get("theme");
   applyTheme(theme === "dark" || theme === "light" ? theme
              : (localStorage.getItem("bigpixels.theme") || "system"));
   applyTouchCopy();
+  renderLang();
   renderZoom();
   fetch("/api/presets")
     .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
@@ -1241,7 +1317,8 @@ function restoreJob(id) {
       }
     })
     .catch(e => {
-      $("#engine").innerHTML = '<span class="chip"><i class="dot warn"></i>引擎无响应</span>';
-      fail("无法连接本地服务。", "请确认 app/server/server.py 仍在运行，然后刷新本页。" + String(e.message || e));
+      $("#engine").innerHTML = '<span class="chip"><i class="dot warn"></i>' +
+        t("ui.engine.down") + "</span>";
+      fail(t("ui.err.offline"), t("ui.err.offline.hint") + String(e.message || e));
     });
 })();

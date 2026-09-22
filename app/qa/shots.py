@@ -171,6 +171,15 @@ CHECK = r"""
               grp: g ? ((eb && eb.textContent) || '').trim() : null,
               own: !!e.closest('#brightGrp')};
     })(),
+    /* 界面语言那一路：一个下拉、三种语言，而且要真的在「更多设置」里。
+       只查结构，不查语言名字写的是什么 —— 那是服务端词条的事。 */
+    langSel: (() => {
+      const s = q('#lang');
+      if (!s) return null;
+      return {opts: [...s.options].map(o => o.value), value: s.value,
+              inAdv: !!s.closest('details.adv'),
+              i18n: (window.I18N || {}).lang || null};
+    })(),
     dupIds: (() => {
       const seen = {}, dup = [];
       document.querySelectorAll('[id]').forEach(e => {
@@ -296,6 +305,12 @@ def report_check(c: dict, mobile: bool = False):
           + ("" if c.get("dupIds") else " · 全页无重复 id"))
     bg = c.get("brightGrp") or {}
     print(f"            明暗 {bg.get('kids')} 档 · 落在「{bg.get('grp')}」分组")
+    ls = c.get("langSel")
+    if ls:
+        print(f"            界面语言 {ls['opts']} · 当前 {ls['value']} · 词条 {ls['i18n']}"
+              + ("（在更多设置里）" if ls["inAdv"] else "   ！！没在更多设置里"))
+    else:
+        print("            界面语言：没找到 #lang 那个下拉")
     dw = c.get("drawer") or {}
     if mobile and dw.get("bar"):
         g = dw.get("go") or {"x": ["—", "—"], "d": [0, 0]}
@@ -353,6 +368,18 @@ def report_check(c: dict, mobile: bool = False):
     bg = c.get("brightGrp")
     if not bg or bg.get("kids") != 2 or not bg.get("own"):
         bad.append(f"明暗开关没画进「明暗」那一组（{bg}）")
+    # 换语言是第六个「设置」，跟前两步同一类事故：控件没画出来、或者跑到别处去了。
+    # 顺带把「页面拿到的词条就是当前语言」对上 —— 词条发错语言的话整页都白搭。
+    ls = c.get("langSel")
+    if not ls:
+        bad.append("更多设置里没有界面语言那个下拉")
+    else:
+        if ls["opts"] != ["zh", "en", "ja"]:
+            bad.append(f"语言下拉里不是 zh/en/ja 三种：{ls['opts']}")
+        if not ls["inAdv"]:
+            bad.append("语言下拉没画进「更多设置」里")
+        if ls["i18n"] != ls["value"]:
+            bad.append(f"页面拿到的词条语言 {ls['i18n']} 跟下拉选中的 {ls['value']} 对不上")
     # 窄屏抽屉：动作栏必须在、必须贴底；抽屉收着就得是真的收干净
     # （藏到视口外 **并且** visibility:hidden，两样都要 —— 只验位置的话，
     #  一个还留在可访问性树里的抽屉照样过，而 Tab 会钻进那种抽屉里）。

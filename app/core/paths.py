@@ -18,3 +18,5 @@ OUTPUT_DIR = os.path.join(ROOT, "outputs")
 WEB_DIR = os.path.join(ROOT, "web")          # 前端静态资源（html/css/js/fonts/demo）
 SAMPLE_DIR = os.path.join(ROOT, "samples")
 CACHE_DIR = os.path.join(ROOT, ".cache")     # 临时/缓存一律压在这里，不碰 C 盘
+LOCALE_DIR = os.path.join(ROOT, "app", "locales")   # 每种语言一份词条
+SETTINGS_PATH = os.path.join(OUTPUT_DIR, "settings.json")

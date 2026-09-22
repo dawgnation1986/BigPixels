@@ -138,6 +138,52 @@ def main():
           ", ".join(f"{x['id']}={x['label']}" for x in cfg.get("bright", [])))
     check(isinstance(cfg["device_probe"], dict), "设备自检结论已读", str(cfg["device_probe"]))
 
+    # 2b. 界面语言
+    #     词条是按语言分开的 json；少一条就退回中文 —— 于是界面上会出现两种语言混着，
+    #     而**不会报任何错**。所以这里两头都盯：三份表的键必须一模一样，
+    #     换语言之后界面上真的换了字（不是只在设置里记了个字段）。
+    langs = [x["id"] for x in cfg.get("langs", [])]
+    check(langs == ["zh", "en", "ja"], "语言列表",
+          ", ".join(f"{x['id']}={x['name']}" for x in cfg.get("langs", [])))
+    check(len(cfg.get("ui", {})) > 120, "界面词条随 /api/presets 一起送出",
+          f"{len(cfg.get('ui', {}))} 条 ui.*")
+
+    import app.core as _U
+    keys = {c: set(_U.i18n.table(c)) for c in _U.LANGS}
+    for c in _U.LANGS[1:]:
+        miss, extra = sorted(keys["zh"] - keys[c]), sorted(keys[c] - keys["zh"])
+        check(not miss and not extra, f"词条键与 zh 完全一致：{c}",
+              ("" if not (miss or extra) else
+               (f"缺 {len(miss)} 条 {miss[:6]}" if miss else "")
+               + (f" 多 {len(extra)} 条 {extra[:6]}" if extra else "")))
+
+    st, js, hd = get(base + "/js/i18n.js")
+    check(st == 200 and "javascript" in hd.get("Content-Type", "") and b"window.I18N" in js,
+          "GET /js/i18n.js（按当前语言现拼）", f"{len(js)} bytes  {hd.get('Content-Type')}")
+    page = json.loads(re.search(rb"window\.I18N = (\{.*\});", js).group(1).decode("utf-8"))
+    check(page["lang"] == cfg["lang"], "词条里的语言与设置一致", f"lang={page['lang']}")
+    check("ui.step.1" in page["ui"] and "ui.go" in page["ui"],
+          "页面要用的几条词条都在", "ui.step.1 / ui.go")
+
+    st, _, _ = post(f"{base}/api/settings?lang=en")
+    en = jget(f"{base}/api/presets")
+    zh0 = next(p for p in cfg["presets"] if p["id"] == "anime")
+    en0 = next(p for p in en["presets"] if p["id"] == "anime")
+    check(st == 200 and en["lang"] == "en", "切成英文", f"HTTP {st} · lang={en['lang']}")
+    check(bool(en0["label"]) and en0["label"] != zh0["label"], "界面上的字真的跟着换",
+          f"动漫插画 → {en0['label']}")
+    st, _, _ = post(f"{base}/api/settings?lang=ja")
+    ja0 = next(p for p in jget(f"{base}/api/presets")["presets"] if p["id"] == "anime")
+    check(st == 200 and ja0["label"] not in (zh0["label"], en0["label"]),
+          "切成日文", f"anime → {ja0['label']}")
+    st, _, _ = post(f"{base}/api/settings?lang=fr")
+    check(st == 400, "不认识的语言被拒", f"HTTP {st}")
+    st, _, _ = post(f"{base}/api/settings")
+    check(st == 400, "改设置必须说清改哪一项", f"HTTP {st}")
+    post(f"{base}/api/settings?lang=zh")
+    check(jget(f"{base}/api/presets")["lang"] == "zh", "语言已复原成 zh",
+          "自检不该把别人的设置留在别的语言上")
+
     # 3. 真跑一个任务
     src = a.src or os.path.join(DEMO, a.demo)
     if not os.path.isfile(src):

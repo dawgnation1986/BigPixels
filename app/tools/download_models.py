@@ -39,6 +39,7 @@ import urllib.request
 import sys as _sys
 _sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from app.core.paths import MODEL_DIR                                   # noqa: E402
+from app.core.i18n import t, set_lang                                 # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEFAULT_DIR = MODEL_DIR
@@ -104,11 +105,11 @@ MODELS = [
 ]
 
 GROUP = {
-    "waifu2x_cunet_": "waifu2x CUnet 卡通",
-    "waifu2x_swin_art_": "waifu2x Swin 卡通",
-    "waifu2x_swin_photo_": "waifu2x Swin 照片",
-    "RealESRGAN_": "Real-ESRGAN 照片",
-    "4x-AnimeSharp": "AnimeSharp 卡通",
+    "waifu2x_cunet_": "dl.group.cunet_art",
+    "waifu2x_swin_art_": "dl.group.swin_art",
+    "waifu2x_swin_photo_": "dl.group.swin_photo",
+    "RealESRGAN_": "dl.group.esrgan",
+    "4x-AnimeSharp": "dl.group.animesharp",
 }
 
 TOTAL_BYTES = sum(m[3] for m in MODELS)
@@ -128,7 +129,7 @@ def group_of(name: str) -> str:
     for k, v in GROUP.items():
         if name.startswith(k):
             return v
-    return "其他"
+    return "dl.group.other"
 
 
 # --------------------------------------------------------------------------- #
@@ -151,43 +152,45 @@ def inspect(dest: str) -> tuple[list[tuple], list[tuple]]:
         head = open(p, "rb").read(64)
         low = head.lower()
         if head.startswith(b"version https://git-lfs"):
-            why = "不是模型文件（git-lfs 指针 —— 真正的权重没跟着下载）"
+            why = t("dl.why.lfs")
         elif low.startswith(b"<!doctype") or low.startswith(b"<?xml") or b"<html" in low:
-            why = "不是模型文件（下载站返回的网页，多半是断网或者要验证）"
+            why = t("dl.why.html")
         elif head[:1] != b"\x08":
-            why = "不是模型文件（开头不是 ONNX）"
+            why = t("dl.why.notonnx")
         else:
-            why = "不完整（下到一半断了）"
+            why = t("dl.status.partial")
         bad.append((repo, path, name, size,
-                    f"{why}：现在 {got} 字节，应该是 {size} 字节"))
+                    t("dl.mismatch", why=why, got=got, size=size)))
     return good, bad
 
 
 def report(good: list, bad: list, dest: str, check_only: bool):
-    print(f"\n  模型目录  {dest}")
-    print(f"  清单      {len(MODELS)} 个 · 合计 {size_str(TOTAL_BYTES)}\n")
+    print("\n" + t("dl.title", dir=dest))
+    print(t("dl.manifest", n=len(MODELS), size=size_str(TOTAL_BYTES)) + "\n")
     if good:
         last = None
         for _repo, _path, name, size, _why in good:
             g = group_of(name)
             if g != last:
-                print(f"  [{g}]")
+                print("[" + t(g) + "]")
                 last = g
-            print(f"    有  {name:<38s} {size_str(size):>9s}")
+            print(t("dl.row.have", name=name, size=size_str(size)))
     if bad:
         print()
         last = None
         for _repo, _path, name, size, why in bad:
             g = group_of(name)
             if g != last:
-                print(f"  [{g}]")
+                print("[" + t(g) + "]")
                 last = g
-            print(f"    缺  {name:<38s} {size_str(size):>9s}   {why}")
+            print(t("dl.row.missing", name=name, size=size_str(size), why=why))
     print()
-    print(f"  合计：{len(good)} 个在 · {len(bad)} 个缺"
-          + (f"，要下 {size_str(sum(b[3] for b in bad))}" if bad and not check_only else ""))
+    line = t("dl.sum", have=len(good), miss=len(bad))
+    if bad and not check_only:
+        line += t("dl.sum.todo", size=size_str(sum(b[3] for b in bad)))
+    print(line)
     if not bad:
-        print("  模型已齐备。\n")
+        print(t("dl.all_ok") + "\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -220,8 +223,7 @@ def fetch(base: str, repo: str, path: str, name: str, want: int, dest: str) -> b
         try:
             total = head_size(url) or want
             if total != want:
-                print(f"\n     ! 上游该文件为 {total} 字节，清单记录为 {want} —— "
-                      f"权重可能已更新，跳过该文件，避免下载到不匹配的内容")
+                print("\n" + t("dl.upstream", total=total, want=want))
                 return False
             have = os.path.getsize(tmp) if os.path.exists(tmp) else 0
             if have > total:                    # 上回留下的脏 .part
@@ -229,7 +231,7 @@ def fetch(base: str, repo: str, path: str, name: str, want: int, dest: str) -> b
             got, t0 = have, time.time()
             mode = "ab" if have else "wb"
             if have:
-                print(f"\n     断点续传 {name}（已有 {mb(have)}）")
+                print("\n" + t("dl.resume", name=name, have=mb(have)))
             with open(tmp, mode) as f:
                 while got < total:
                     end = min(got + CHUNK, total) - 1
@@ -258,51 +260,57 @@ def fetch(base: str, repo: str, path: str, name: str, want: int, dest: str) -> b
             os.replace(tmp, out)
             # 结尾补空格把上面那行进度条盖干净 —— 进度行比这句长，
             # 不盖的话命令行里会留半截百分比（cmd 不一定吃 ANSI 的擦除序列）
-            done = (f"      好  {name:<38s} {mb(total):>9s}"
-                    f"   （{mb(got - have)} / {time.time() - t0:.0f} s）")
+            done = t("dl.file.done", name=name, size=mb(total),
+                     part=mb(got - have), sec=time.time() - t0)
             print("\r" + done.ljust(90))
             return True
         except Exception as e:                  # 断网、超时、对端 5xx…
             msg = f"{type(e).__name__}: {str(e)[:80]}"
-            print(f"\r     {attempt}/{TRIES} 次失败  {name}  {msg}")
+            print("\r" + t("dl.attempt", attempt=attempt, tries=TRIES,
+                            name=name, msg=msg))
             if attempt < TRIES:
                 time.sleep(2 * attempt)         # 退避一下再试，别把对端惹毛
-    print(f"      失败  {name}")
+    print(t("dl.fetch_fail", name=name))
     return False
 
 
 def download(bad: list, dest: str, base: str) -> list:
-    print(f"  开始下载（源 {base}）—— 中断后重新运行即可断点续传\n")
+    print(t("dl.start", base=base) + "\n")
     failed, t0 = [], time.time()
     for repo, path, name, size, _why in bad:
         if not fetch(base, repo, path, name, size, dest):
             failed.append(name)
     if len(bad) > len(failed):
         got = sum(b[3] for b in bad if b[2] not in failed)
-        print(f"\n  下完 {len(bad) - len(failed)} 个 · {size_str(got)} · "
-              f"用了 {time.time() - t0:.0f} s")
+        print("\n" + t("dl.batch", n=len(bad) - len(failed),
+                        size=size_str(got), sec=time.time() - t0))
     return failed
 
 
 # --------------------------------------------------------------------------- #
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="BigPixels 模型自检 / 下载（权重不上仓库，按需现下）",
+        description=t("dl.desc"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="退出码：0 齐了 / 1 还缺 / 2 参数或环境有问题")
+        epilog=t("dl.exitcode"))
     ap.add_argument("--dir", default=os.environ.get("BIGPIXELS_MODELS") or DEFAULT_DIR,
-                    help="模型目录（默认脚本旁边的 models/）")
-    ap.add_argument("--check", action="store_true", help="只自检，不下载")
-    ap.add_argument("--force", action="store_true", help="忽略已有文件，全部重下")
+                    help=t("dl.arg.dir"))
+    ap.add_argument("--check", action="store_true", help=t("dl.arg.check"))
+    ap.add_argument("--force", action="store_true", help=t("dl.arg.force"))
     ap.add_argument("--source", choices=sorted(SOURCES), default="mirror",
-                    help="从哪儿下：mirror 是国内镜像（默认），hf 是原站")
+                    help=t("dl.arg.source"))
+    ap.add_argument("--lang", choices=("zh", "en", "ja"), default=None,
+                    help=t("lang.arghelp"))
     a = ap.parse_args()
+
+    if a.lang:
+        set_lang(a.lang)
 
     dest = os.path.abspath(a.dir)
     try:
         os.makedirs(dest, exist_ok=True)
     except OSError as e:
-        print(f"  无法创建模型目录 {dest}：{e}")
+        print(t("dl.mkdir.fail", dest=dest, err=e))
         return 2
 
     if a.force:
@@ -317,24 +325,23 @@ def main() -> int:
     if not bad:
         return 0
     if a.check:
-        print("  仅执行自检（--check），未下载。去掉 --check 即会补齐缺失文件。\n")
+        print(t("dl.check_only") + "\n")
         return 1
 
-    print(f"  下载总量 {size_str(sum(b[3] for b in bad))}，"
-          f"国内网络走的是 hf-mirror 镜像；慢或断了就重跑，会接着传。")
+    print(t("dl.total", size=size_str(sum(b[3] for b in bad))))
     failed = download(bad, dest, SOURCES[a.source])
 
     # 下完再自检一遍 —— 不拿「请求返回 200」当成功，拿「文件真对得上」当成功
     good2, bad2 = inspect(dest)
     print()
     if not bad2:
-        print(f"  已完成，{len(good2)} 个模型齐备（{size_str(TOTAL_BYTES)}）。\n")
+        print(t("dl.done", n=len(good2), size=size_str(TOTAL_BYTES)) + "\n")
         return 0
-    print(f"  还差 {len(bad2)} 个：{', '.join(b[2] for b in bad2)}")
-    print("  以下文件确实未能下载（网络或代理原因）。可尝试：")
-    print("    · 重新运行本脚本 —— 已下载的文件不会重复下载，中断的会断点续传")
-    print("    · 若已配置代理，改回镜像：--source mirror（默认）；镜像较慢则用 --source hf")
-    print("    · 也可手动下载后放入上述模型目录，文件名需与清单一致\n")
+    print(t("dl.still_missing", n=len(bad2), names=", ".join(b[2] for b in bad2)))
+    print(t("dl.failed"))
+    print(t("dl.failed.l1"))
+    print(t("dl.failed.l2"))
+    print(t("dl.failed.l3") + "\n")
     return 1
 
 
@@ -342,5 +349,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print("\n  已手动中断。已下载的文件均保留，重新运行将继续。\n")
+        print("\n" + t("dl.interrupt") + "\n")
         sys.exit(1)

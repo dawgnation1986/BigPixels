@@ -39,6 +39,12 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))      # app/server -> app -> 项目根
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+# 词条与设置只用标准库，所以「依赖还没装」的第一次运行也能用它们 ——
+# app/core 下面那几个吃 numpy 的模块是懒加载的，这一句 import 不会碰到它们。
+import app.core as U                                # noqa: E402
 
 SETUP = os.path.join(HERE, "setup_env.py")
 MODELS = os.path.join(ROOT, "tools", "download_models.py")   # 入口薄壳在 tools/ 下
@@ -79,7 +85,7 @@ def run(cmd: list[str]) -> int:
     try:
         return subprocess.call(cmd, env=child_env())
     except OSError as e:
-        print(f"  起不了进程 {cmd[0]}：{e}")
+        print("  " + U.t("boot.spawn", cmd=cmd[0], err=e))
         return 1
 
 
@@ -88,7 +94,7 @@ def step(n: int, title: str) -> None:
     sys.stdout.flush()
 
 
-def hold(msg: str = "\n  按回车关闭这个窗口…") -> None:
+def hold(msg: str | None = None) -> None:
     """出错时把窗口停住。
 
     双击启动的窗口跑完就关，用户根本来不及看上面写了什么，所以失败必须停住。
@@ -97,7 +103,7 @@ def hold(msg: str = "\n  按回车关闭这个窗口…") -> None:
     if NO_PAUSE or not sys.stdin.isatty():
         return
     try:
-        input(msg)
+        input(msg if msg is not None else U.t("boot.pause"))
     except (EOFError, KeyboardInterrupt):
         pass
 
@@ -105,11 +111,34 @@ def hold(msg: str = "\n  按回车关闭这个窗口…") -> None:
 NO_PAUSE = False
 
 
+def ask_lang() -> str | None:
+    """第一次运行时问一次界面语言。
+
+    只在「对着一个控制台」时问：没有终端（脚本、CI、重定向）就一律沿用默认，
+    免得整条启动流程卡在一个没人能回答的提问上。
+    答什么都不认识时按默认走 —— 宁可语言猜错一次（网页里随时能改），
+    也别让人因为手滑而被挡在启动之外。
+    """
+    if not sys.stdin.isatty():
+        return None
+    print()
+    print("  " + U.t("lang.title"))
+    for i, code in enumerate(U.LANGS, 1):
+        print(f"    {i}) {U.LANG_NAMES[code]}")
+    try:
+        raw = input("  " + U.t("lang.hint") + " ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+    pick = {"": U.LANGS[0], "1": "zh", "2": "en", "3": "ja"}.get(raw, U.LANGS[0])
+    return pick
+
+
 # --------------------------------------------------------------------------- #
 def banner() -> None:
     print()
-    print("  BigPixels 放大台 · 本地版")
-    print("  在本机运行的 AI 无损放大；图片不会离开本机，也不会上传至任何位置。")
+    print("  " + U.t("app.title"))
+    print("  " + U.t("app.tagline"))
     print("  " + "-" * 62)
 
 
@@ -117,17 +146,18 @@ def main() -> int:
     global NO_PAUSE
 
     ap = argparse.ArgumentParser(
-        description="BigPixels 一键启动：环境 → 模型 → 网页服务",
+        description=U.t("boot.desc"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="退出码：0 成功 / 1 中间步骤失败 / 2 参数错误")
-    ap.add_argument("--port", type=int, default=8765, help="网页服务端口（默认 8765）")
-    ap.add_argument("--venv", default=DEFAULT_VENV, help="虚拟环境目录（默认 .venv）")
+        epilog=U.t("arg.exitcode"))
+    ap.add_argument("--port", type=int, default=8765, help=U.t("arg.port"))
+    ap.add_argument("--venv", default=DEFAULT_VENV, help=U.t("arg.venv"))
     ap.add_argument("--source", choices=("mirror", "hf"), default="mirror",
-                    help="模型下载源：mirror 国内镜像（默认）/ hf 原站")
-    ap.add_argument("--check", action="store_true",
-                    help="只自检环境和模型，不安装、不下载、不起服务")
-    ap.add_argument("--no-open", action="store_true", help="起服务但不自动开浏览器")
-    ap.add_argument("--no-pause", action="store_true", help="出错时不停留等待回车")
+                    help=U.t("arg.source"))
+    ap.add_argument("--lang", choices=list(U.LANGS), default=None,
+                    help=U.t("lang.arghelp"))
+    ap.add_argument("--check", action="store_true", help=U.t("arg.check"))
+    ap.add_argument("--no-open", action="store_true", help=U.t("arg.no_open"))
+    ap.add_argument("--no-pause", action="store_true", help=U.t("arg.no_pause"))
     a = ap.parse_args()
 
     NO_PAUSE = a.no_pause
@@ -139,66 +169,77 @@ def main() -> int:
         except Exception:
             pass
 
+    # 语言：命令行给了就用它；没给、又从来没选过，就问一次。
+    # 问完立刻落盘，所以「第一次运行」只会出现一次。
+    if a.lang:
+        U.i18n.set_lang(a.lang)
+    elif U.i18n.chosen() is None:
+        picked = ask_lang()
+        if picked:
+            U.i18n.set_lang(picked)
+            print("  " + U.t("lang.saved", name=U.LANG_NAMES[picked]))
+
     banner()
     venv = os.path.abspath(a.venv)
     py = venv_python(venv)
+    lang_arg = ["--lang", U.lang_of()]
 
     # ---------------------------------------------------------------- 1/3 环境
     # .venv 还没建的时候手上只有系统 python，得用它去建。setup_env.py 自己会
     # 判断「建环境 / 补依赖 / 已经好了」，所以这里只要把解释器选对就行。
     have_venv = os.path.isfile(py)
-    step(1, "运行环境" + ("（首次运行，先准备虚拟环境与依赖）" if not have_venv else ""))
-    cmd = [py if have_venv else sys.executable, SETUP, "--venv", venv]
+    step(1, U.t("step.env") + (U.t("step.env.first") if not have_venv else ""))
+    cmd = [py if have_venv else sys.executable, SETUP, "--venv", venv] + lang_arg
     if a.check:
         cmd.append("--check")
     rc = run(cmd)
     if rc:
-        print("\n  ！运行环境未就绪 —— 具体失败步骤见上方输出。")
-        print("     Windows 上多为未安装 Python 或安装不完整：请到 python.org 安装")
-        print("     3.9 以上版本（安装时勾选 \"Add python.exe to PATH\"），然后重新双击启动。")
+        print("\n  " + U.t("env.runfail"))
+        print("     " + U.t("env.runfail.win1"))
+        print("     " + U.t("env.runfail.win2"))
         hold()
         return 1
     py = venv_python(venv)
     if not os.path.isfile(py):
-        print(f"\n  ！环境显示已建好，却找不到 {py}")
+        print("\n  " + U.t("env.runfail.nopy", py=py))
         hold()
         return 1
 
     # ---------------------------------------------------------------- 2/3 模型
-    step(2, "模型自检（15 个权重 · 约 292 MB · 缺什么下什么）")
-    if run([py, MODELS, "--source", a.source]):
+    step(2, U.t("step.models"))
+    if run([py, MODELS, "--source", a.source] + lang_arg):
         # download_models.py 自己已经把「重跑续传 / 换源 / 手动放文件」说清了
-        print("\n  ！模型未下载完整。缺失的模型在网页中不可用，其余功能不受影响。")
-        print("     已下载的文件不会重复下载，重新运行即从断点续传。")
+        print("\n  " + U.t("env.modelsfail"))
+        print("     " + U.t("env.modelsfail.resume"))
         hold()
         return 1
 
     # ---------------------------------------------------------------- 3/3 服务
     if a.check:
-        step(3, "网页服务")
-        print("        --check：已跳过。以上两步均无问题，去掉 --check 即可启动服务。\n")
+        step(3, U.t("step.server"))
+        print("        " + U.t("env.check.skip") + "\n")
         return 0
 
     url = f"http://127.0.0.1:{a.port}/"
-    step(3, "起网页服务")
-    print(f"        地址   {url}")
-    print("        停止   在本窗口按 Ctrl+C，或直接关闭本窗口")
+    step(3, U.t("step.server.start"))
+    print("        " + U.t("env.server.addr", url=url))
+    print("        " + U.t("env.server.stop"))
     print()
 
-    cmd = [py, SERVER, "--port", str(a.port)]
+    cmd = [py, SERVER, "--port", str(a.port)] + lang_arg
     if not a.no_open:
         cmd.append("--open")
     rc = run(cmd)
 
     print()
     if rc:
-        print(f"  ！服务已退出（退出码 {rc}）。")
-        print(f"     若上方提示「端口 {a.port} 无法启动」，说明该端口已被占用 ——")
-        print("     通常是上次的窗口仍在运行。请关闭它，或改用其他端口：")
+        print("  " + U.t("env.server.exit", rc=rc))
+        print("     " + U.t("env.server.busy", port=a.port))
+        print("     " + U.t("env.server.busy2"))
         print(f"         python app\\server\\bootstrap.py --port {a.port + 1}")
         hold()
         return 1
-    print("  服务已停止。\n")
+    print("  " + U.t("env.server.stopped") + "\n")
     return 0
 
 
@@ -206,5 +247,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except KeyboardInterrupt:
-        print("\n  已手动中断。已下载的模型与已安装的依赖均保留，重新运行将从中断处继续。\n")
+        print("\n  " + U.t("env.interrupt2") + "\n")
         sys.exit(0)
