@@ -49,8 +49,8 @@ def _lazy(mod: str, *names: str) -> None:
         _LAZY[n] = mod
 
 
-_lazy("imaging", "_gauss_blur", "_gauss_kernel", "brighten", "load_image", "save_image",
-      "unsharp")
+_lazy("imaging", "_gauss_blur", "_gauss_kernel", "brighten", "declip", "load_image",
+      "save_image", "unsharp")
 _lazy("pipeline", "build_runner", "upscale", "upscale_alpha")
 _lazy("runner", "MIN_TILE", "TILE_MULT", "SRRunner", "_is_nhwc", "ort")
 
@@ -74,6 +74,6 @@ __all__ = [
     "LANGS", "LANG_NAMES", "DEFAULT_LANG", "lang_of", "t", "web_table", "i18n", "settings",
     "PRESETS", "DENOISE_LEVELS", "CLEAR_LEVELS", "BRIGHT_LEVELS", "label",
     "resolve_model", "plan_passes", "resolve_sharpen", "resolve_bright",
-    "load_image", "save_image", "unsharp", "brighten", "SRRunner", "ort",
+    "load_image", "save_image", "unsharp", "brighten", "declip", "SRRunner", "ort",
     "build_runner", "upscale", "upscale_alpha",
 ]

@@ -777,7 +777,12 @@ def run_job(jid: str) -> None:
         j["net_scale"] = net
         j["stage"] = U.t("st.infer")
 
-        cur = rgb
+        # 进网络之前先把源图的 JPEG 振铃压掉：细节模型会把那几个灰阶的振铃当成
+        # 纹理，放大成一片网纹（眼睛、嘴这类「小尺寸 + 四周全是强边」的地方最明显）。
+        # 这一步必须和 app/core/pipeline.py 的 upscale() 保持一致 —— 命令行走那条路，
+        # 网页走这条，两边接的东西不一样，同一张图就会出两种结果，而界面和指标
+        # 都看不出来。app/qa/smoke.py 的 4d 用「网页结果 == app.core.upscale」锁住它。
+        cur = U.declip(rgb)
         t0 = now()
         for p in range(passes):
             def cb(done, total, el, _p=p):

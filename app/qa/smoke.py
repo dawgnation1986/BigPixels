@@ -259,6 +259,52 @@ def main():
     except Exception as e:                                  # noqa: BLE001
         check(False, "明暗「提亮」= 整体 ×1.019", f"{type(e).__name__}: {e}")
 
+    # 4d. 网页那条推理链跟库接口必须是同一条。
+    #     declip（进网络前压掉 JPEG 振铃）一开始只接在 pipeline.upscale 上，服务端
+    #     自己写循环就没接 —— 命令行出的图干净、网页出的图眼睛/嘴一片网纹，而界面、
+    #     指标、库接口自检（4b）全都看不出来。所以这里拿「平坦底 + 幅度 2% 的细棋盘」
+    #     当探针：它的高频低于 declip 阈值，接没接这一步，输出会差出一大截。
+    #     判据是「网页结果 == app.core.upscale 的结果」，不是「好不好看」。
+    try:
+        import app.core as _U
+        # 探针：幅度 0.04 的 1px 棋盘（频域落在奈奎斯特）。过一遍 declip 的高斯后
+        # 高频约 0.038，仍低于阈值 0.055 —— 所以「这一步在不在」就是「网络输入有
+        # 没有棋盘」的区别。先量化成 uint8 再喂给两边：PNG 回环本身会取整一次，
+        # 不先量化的话库那侧拿到的是理论浮点值，会比出 1~2/255 的假差异。
+        _ck = np.indices((32, 32)).sum(0) % 2
+        _plane = ((0.5 + 0.04 * (_ck * 2 - 1)) * 255 + 0.5).astype(np.uint8)
+        _u8 = np.repeat(_plane[..., None], 3, axis=2)
+        _syn = _u8.astype(np.float32) / 255.0
+        _buf = BytesIO()
+        Image.fromarray(_u8).save(_buf, "PNG")
+        # tile 必须用服务端认的值（128/192/256/384/512），给 64 会先被 400 掉，
+        # 比较根本发生不了 —— 那等于这条自检白写（第一版就是这么错的）。
+        _q = urllib.parse.urlencode({"preset": "anime", "scale": 2, "denoise": "none",
+                                     "tile": 128, "name": "declip_probe.png"})
+        _req = urllib.request.Request(base + "/api/job?" + _q, data=_buf.getvalue(),
+                                      method="POST")
+        with urllib.request.urlopen(_req, timeout=120) as r:
+            _jid = json.loads(r.read().decode("utf-8"))["id"]
+        _t0, _js = time.time(), {}
+        while time.time() - _t0 < 120:
+            _js = jget(f"{base}/api/job/{_jid}")
+            if _js["state"] in ("done", "error"):
+                break
+            time.sleep(0.2)
+        _, rb, _ = get(f"{base}/api/job/{_jid}/result")
+        web_u8 = np.asarray(Image.open(BytesIO(rb)).convert("RGB"), np.uint8)
+        # device 不传 = 两边都走 "auto"，否则 CPU/DML 的浮点尾数差会盖过要守的东西
+        lib_u8 = ((_U.upscale(_syn, "anime", 2, denoise="none", tile=128, overlap=16,
+                              clear="normal", bright="off") * 255 + 0.5)
+                  .astype(np.uint8))
+        dmax = int(np.abs(web_u8.astype(int) - lib_u8.astype(int)).max())
+        check(_js["state"] == "done" and web_u8.shape == lib_u8.shape and dmax <= 2,
+              "网页推理链 == app.core.upscale（declip 没漏）",
+              f"{web_u8.shape[1]}×{web_u8.shape[0]} · 最大像素差 {dmax}/255")
+    except Exception as e:                                  # noqa: BLE001
+        check(False, "网页推理链 == app.core.upscale（declip 没漏）",
+              f"{type(e).__name__}: {e}")
+
     # 5. 三张产物都取得到，而且字节数跟记录一致
     for what, key, magic in (("input", "in_bytes", None),
                              ("baseline", "bicubic_bytes", b"\x89PNG"),
