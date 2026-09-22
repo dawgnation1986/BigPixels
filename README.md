@@ -399,8 +399,9 @@ Windows 因 `SO_REUSEADDR` 的语义**允许第二个进程绑定同一端口**�
 
 ## 目录
 
-源码全部收在 `app/` 下，按职责分为五个包。**根目录只保留必要内容**：
-`README.md` / `LICENSE` / `requirements.txt` 与两个双击启动脚本；
+源码全部收在 `app/` 下，按职责分为五个包。**根目录只放必要内容**：
+`README.md` / `LICENSE` / `requirements.txt`、两个双击启动脚本，以及展示用的
+`插画.png`（上文那张插画 4× 超分后的成图）；
 所有命令行入口收进 `tools/`。
 
 ```
@@ -473,6 +474,7 @@ outputs/web/         产物：一次任务一个文件夹 <时间戳>_<图名>_<
 outputs/settings.json 保存 / 暂存 设置
 outputs/bench/       评测对比图、outputs/ui/ 界面截图
 docs/promo/          README 引用的效果对比图与界面截图（5 张，约 5 MB）
+插画.png             上文那张插画 4× 超分后的成图（3372 × 5056，约 20 MB）
 ```
 
 > 命令行入口原先摊放在根目录，后统一收进 `tools/`，根目录因此保持整洁。
