@@ -770,7 +770,8 @@ def run_job(jid: str) -> None:
         j["stage"] = U.t("st.model")
         runner = U.build_runner(j["preset"], j["scale"], j["denoise"],
                                 tile=j["tile"], overlap=OVERLAP)
-        passes, net = U.plan_passes(j["scale"], runner.scale)
+        runs, net = U.plan_runs(j["preset"], j["scale"], runner.scale)
+        passes = len(runs)
         j["model"] = runner.name
         j["device"] = runner.device.upper()
         j["passes"] = passes
@@ -791,7 +792,7 @@ def run_job(jid: str) -> None:
                 j["progress"] = round(100.0 * (_p + done / total) / passes)
                 j["elapsed"] = now() - j["started"]
 
-            cur = runner.upscale(cur, progress=cb)
+            cur = runner.upscale(cur, progress=cb, post_down=runs[p])
         t_net = now() - t0
 
         if net != j["scale"]:       # 网络倍率跟目标对不上时，最后用 Lanczos 凑齐
@@ -799,16 +800,22 @@ def run_job(jid: str) -> None:
             cur = np.asarray(u8(cur).resize((tw, th), Image.LANCZOS),
                              np.float32) / 255.0
 
-        # 收尾锐化：网络出来的边是渐变过渡，一条 1px 细线摊到 4x 就是一条灰带。
-        # 这一步只加在边缘上（平坦处 rgb≈模糊版，加的是零），所以不会磨出噪点。
-        sh_r, sh_g = U.resolve_sharpen(j["preset"], j.get("clear", "normal"))
+        # 收尾细节补偿：网络出来的边是渐变过渡，一条 1px 细线摊到 4x 就是一条灰带。
+        # 插画预设走零均值带通（只抬「线宽」那一层，不在线两侧留光晕），老预设仍走
+        # USM；半径按输出倍率缩放，不然 8x 上等于没做。
+        sh_kind, sh_r, sh_r2, sh_g = U.resolve_finish(
+            j["preset"], j.get("clear", "normal"), j["scale"])
         if sh_g > 0:
             j["stage"] = U.t("st.sharpen", name=U.label("clear", j.get("clear", "normal")))
-            cur = U.unsharp(cur, sh_r, sh_g)
+            cur = (U.detail_band(cur, sh_r, sh_r2, sh_g) if sh_kind == "band"
+                   else U.unsharp(cur, sh_r, sh_g))
         # 注意：这里存的是「引擎参数」，字段名别跟指标 res["sharp_gain"]（锐度倍率，
         # 后面 j.update(measure(...)) 会写进来）撞车 —— 撞了的话界面会把 49.4 这种
         # 倍率当成锐化增益显示出来。
-        j["sharp_radius"], j["sharp_amount"] = sh_r, round(sh_g, 3)
+        j["sharp_radius"], j["sharp_amount"] = round(sh_r, 3), round(sh_g, 3)
+        # 带通的上界半径：账目区要显示成 1.0–3.0，只报 r1 会丢掉这个范围。
+        j["sharp_radius2"] = round(sh_r2, 3)
+        j["finish_kind"] = sh_kind
 
         # 明暗开关放在最后：纯观感调整，不该影响上面任何一步的判断。
         # 落盘的字段名是 bright_factor，跟指标里的任何字段都不撞。

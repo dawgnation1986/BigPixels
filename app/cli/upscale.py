@@ -10,10 +10,10 @@
     Real-ESRGAN x4plus / 4x-AnimeSharp —— 现代 GAN 系，照片与动漫线稿更强
 
 核心实现拆在 app/core/ 下，这里只管参数解析和进度显示：
-    core/presets.py   预设 / 降噪 / 清晰度 → 权重文件与锐化参数
+    core/presets.py   预设 / 降噪 / 清晰度 → 权重文件与收尾参数
     core/runner.py    单个 ONNX 模型的瓦片式推理器
-    core/pipeline.py  串联多次网络 + 收尾缩放 + 收尾锐化
-    core/imaging.py   读图 / 存图 / unsharp
+    core/pipeline.py  串联多次网络 + 收尾缩放 + 收尾细节补偿
+    core/imaging.py   读图 / 存图 / unsharp / detail_band
     core/paths.py     项目里所有路径的唯一出处
 
 用法示例：
@@ -41,8 +41,8 @@ if ROOT not in sys.path:
 
 from app.core import (                     # noqa: E402
     BRIGHT_LEVELS, CLEAR_LEVELS, DENOISE_LEVELS, MODEL_DIR, PRESETS, SRRunner,
-    brighten, declip, load_image, ort, plan_passes, resolve_bright, resolve_model,
-    resolve_sharpen, save_image, unsharp, upscale_alpha,
+    brighten, declip, detail_band, load_image, ort, plan_runs, resolve_bright,
+    resolve_finish, resolve_model, save_image, unsharp, upscale_alpha,
 )
 from app.core.i18n import t, set_lang       # noqa: E402
 
@@ -136,8 +136,12 @@ def main(argv=None):
                     desc=t(f"preset.{k}.desc"), tech=t(f"preset.{k}.tech")))
             for idx, f in v["noise"].items():
                 print(t("cli.list.denoise", idx=idx, f=f))
-            r, g = v.get("sharp", (0, 0))
-            print(t("cli.list.sharp", r=r, g=g))
+            if "band" in v:
+                b1, b2, bg = v["band"]
+                print(t("cli.list.band", r1=b1, r2=b2, g=bg))
+            else:
+                r, g = v.get("sharp", (0, 0))
+                print(t("cli.list.sharp", r=r, g=g))
         print("\n" + t("cli.list.clear") + " / ".join(
             f"{k}(×{v:g})" for k, v in CLEAR_LEVELS.items()))
         print(t("cli.list.bright", levels=" / ".join(
@@ -166,14 +170,16 @@ def main(argv=None):
 
     path = resolve_model(args.preset, args.denoise, args.scale)
     runner = SRRunner(path, device=args.device, tile=args.tile, overlap=args.overlap)
-    passes, net_scale = plan_passes(args.scale, runner.scale)
+    runs, net_scale = plan_runs(args.preset, args.scale, runner.scale)
+    passes = len(runs)
     print(t("cli.run.model", name=runner.name))
     print(t("cli.run.summary", device=runner.device.upper(), native=runner.scale,
             scale=args.scale, passes=passes, pad=runner.pad, crop=runner.crop,
             tile=runner.tile, overlap=runner.overlap))
-    _r, _g = resolve_sharpen(args.preset, args.clear)
+    _kind, _r1, _r2, _g = resolve_finish(args.preset, args.clear, args.scale)
     _label = args.clear if isinstance(args.clear, str) else "自定义"
-    print(t("cli.run.clear", label=_label, r=_r, g=_g))
+    _rtxt = "%.1f-%.1fpx" % (_r1, _r2) if _kind == "band" else "%.1fpx" % _r1
+    print(t("cli.run.clear", label=_label, r=_rtxt, g=_g))
     _b = resolve_bright(args.bright)
     _blabel = args.bright if isinstance(args.bright, str) else "自定义"
     print(t("cli.run.bright", label=_blabel, b=_b))
@@ -201,15 +207,17 @@ def main(argv=None):
 
             if passes > 1:
                 print(t("cli.run.net", p=p + 1, passes=passes))
-            cur = runner.upscale(cur, progress=prog)
+            cur = runner.upscale(cur, progress=prog, post_down=runs[p])
         if net_scale != args.scale:
             th, tw = h0 * args.scale, w0 * args.scale
             cur = np.asarray(Image.fromarray((cur * 255 + 0.5).astype(np.uint8))
                              .resize((tw, th), Image.LANCZOS), np.float32) / 255.0
-        radius, gain = resolve_sharpen(args.preset, args.clear)
-        if gain > 0:
-            print(t("cli.run.sharpen", r=radius, g=gain))
-            cur = unsharp(cur, radius, gain)
+        kind, fr1, fr2, fgain = resolve_finish(args.preset, args.clear, args.scale)
+        if fgain > 0:
+            ftxt = "%.1f-%.1fpx" % (fr1, fr2) if kind == "band" else "%.1fpx" % fr1
+            print(t("cli.run.sharpen", r=ftxt, g=fgain))
+            cur = (detail_band(cur, fr1, fr2, fgain) if kind == "band"
+                   else unsharp(cur, fr1, fgain))
         kb = resolve_bright(args.bright)
         if abs(kb - 1.0) > 1e-9:
             print(t("cli.run.bright.short", b=kb))

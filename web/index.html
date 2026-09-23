@@ -109,8 +109,8 @@
       <div class="grp reveal" id="clarityGrp" style="--d:.18s">
         <div class="eyebrow"><span data-i18n="ui.step.5">5 线条清晰度</span><i></i></div>
         <div class="seg" id="clarity" data-kind="opt" role="radiogroup" data-i18n-aria="ui.step.5" aria-label="清晰度"></div>
-        <p class="hint" data-i18n="ui.clarity.hint">网络输出的边缘为渐变过渡，细线放大后会发灰，本档将边缘收回；
-          需要线上那种硬线条则选「更锐」。</p>
+        <p class="hint" data-i18n="ui.clarity.hint">网络输出的边缘是渐变过渡，细线放大后会发灰。本档用零均值带通补偿
+          把这一层抬回来 —— 只抬线本身的宽度，线的两侧不会留光晕。</p>
       </div>
 
       <div class="grp reveal" id="brightGrp" style="--d:.2s">

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""图像读写 + 收尾锐化。"""
+"""图像读写 + 收尾细节补偿（零均值带通 / USM）。"""
 from __future__ import annotations
 
 import math
@@ -13,7 +13,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 # --------------------------------------------------------------------------- #
-# 高斯模糊（收尾锐化与源图去碎纹共用）
+# 高斯模糊（收尾带通 / 锐化与源图去碎纹共用）
 # --------------------------------------------------------------------------- #
 def _gauss_kernel(radius: float) -> np.ndarray:
     k = max(1, int(math.ceil(radius * 3.0)))
@@ -94,7 +94,7 @@ def declip(rgb: np.ndarray, sigma: float | None = None,
 
 
 # --------------------------------------------------------------------------- #
-# 收尾锐化（unsharp mask）
+# 收尾细节补偿：unsharp mask + 零均值带通
 # --------------------------------------------------------------------------- #
 def unsharp(rgb: np.ndarray, radius: float, gain: float) -> np.ndarray:
     """边缘锐化：rgb + gain * (rgb - 模糊版)。gain<=0 直接原样返回。
@@ -105,6 +105,26 @@ def unsharp(rgb: np.ndarray, radius: float, gain: float) -> np.ndarray:
     if gain <= 0 or radius <= 0:
         return rgb
     return np.clip(rgb + gain * (rgb - _gauss_blur(rgb, float(radius))), 0.0, 1.0)
+
+
+def detail_band(rgb: np.ndarray, radius_small: float, radius_large: float,
+                gain: float) -> np.ndarray:
+    """零均值带通补偿：只抬「线宽那一层」尺度，不抬 1px 噪点、不镶光晕。
+
+    和 unsharp 的差别在**高通怎么取**：
+      unsharp 取 (原图 - 小半径模糊)。那里面混着 1px 的 JPEG 振铃和噪声，
+      抬它的同时会在每条线的两侧各留一道亮边/暗边 —— 也就是光晕。
+      带通取 (小半径模糊 - 大半径模糊)，是个零均值的高通，抬的正好是
+      radius_small..radius_large 这一层结构，也就是「线本身的宽度」。
+
+    半径按输出倍率缩放，见 presets.resolve_finish()：这些数是在 4x 输出上标定的，
+    到 8x 线宽翻倍，半径不跟着翻就等于什么都没做。
+    """
+    if gain <= 0 or radius_small <= 0 or radius_large <= radius_small:
+        return rgb
+    band = (_gauss_blur(rgb, float(radius_small))
+            - _gauss_blur(rgb, float(radius_large)))
+    return np.clip(rgb + gain * band, 0.0, 1.0)
 
 
 def brighten(rgb: np.ndarray, factor: float) -> np.ndarray:

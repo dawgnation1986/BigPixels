@@ -9,6 +9,7 @@ import os
 import time
 
 import numpy as np
+from PIL import Image
 
 from .paths import DEVICE_CACHE, MODEL_DIR
 
@@ -268,13 +269,24 @@ class SRRunner:
                   self.crop:self.crop + pw * self.scale]
         return y[:, :, :th * self.scale, :tw * self.scale]
 
-    def upscale(self, rgb: np.ndarray, progress=None) -> np.ndarray:
-        """rgb: float32 HWC [0,1] -> float32 (H*scale, W*scale, 3)"""
+    def upscale(self, rgb: np.ndarray, progress=None,
+                post_down: int = 1) -> np.ndarray:
+        """rgb: float32 HWC [0,1] -> float32 (H*scale//post_down, W*scale//post_down, 3)
+
+        post_down > 1 时「每一块出网络后先降采样再叠加」，所以中间那层超大图
+        从不整幅驻留内存 —— 「优化算法版」的第二次网络（4x 图再跑一次得到 16x）
+        就走这条路。降采样在 float 上做（PIL 的 F 模式），不先量化到 8 位。
+        """
         H, W, _ = rgb.shape
         s = self.scale
+        pd = max(1, int(post_down))
+        if s % pd:
+            raise SystemExit(f"post_down({pd}) 必须整除网络倍率({s})")
+        os_ = s // pd                      # 叠加与输出用的倍率
         x = np.transpose(rgb, (2, 0, 1))[None]
-        acc = np.zeros((3, H * s, W * s), np.float32)
-        wsum = np.zeros((H * s, W * s), np.float32)
+        acc = np.zeros((3, H * os_, W * os_), np.float32)
+        wsum = np.zeros((H * os_, W * os_), np.float32)
+        oo = self.overlap * os_ // pd      # 羽毛边在输出尺度上的像素数
         ys, xs = self._tiles_1d(H), self._tiles_1d(W)
         total, done = len(ys) * len(xs), 0
         t0 = time.time()
@@ -282,12 +294,21 @@ class SRRunner:
             for x0 in xs:
                 th, tw = min(self.tile, H - y), min(self.tile, W - x0)
                 patch = x[:, :, y:y + th, x0:x0 + tw]
-                out = self._run_tile(patch, th, tw)[0]
-                wy = self._ramp(th * s, self.overlap * s, y == 0, y + th >= H)
-                wx = self._ramp(tw * s, self.overlap * s, x0 == 0, x0 + tw >= W)
+                out = self._run_tile(patch, th, tw)[0]          # (3, th*s, tw*s)
+                if pd > 1:
+                    oh, ow = th * os_, tw * os_
+                    plane = np.transpose(np.clip(out, 0.0, 1.0), (1, 2, 0))
+                    out = np.empty((3, oh, ow), np.float32)
+                    for c in range(3):
+                        out[c] = np.asarray(
+                            Image.fromarray(plane[:, :, c], mode="F")
+                            .resize((ow, oh), Image.LANCZOS), np.float32)
+                oy, ox = y * os_, x0 * os_
+                wy = self._ramp(th * os_, oo, y == 0, y + th >= H)
+                wx = self._ramp(tw * os_, oo, x0 == 0, x0 + tw >= W)
                 wmap = wy[:, None] * wx[None, :]
-                acc[:, y * s:(y + th) * s, x0 * s:(x0 + tw) * s] += out * wmap
-                wsum[y * s:(y + th) * s, x0 * s:(x0 + tw) * s] += wmap
+                acc[:, oy:oy + th * os_, ox:ox + tw * os_] += out * wmap
+                wsum[oy:oy + th * os_, ox:ox + tw * os_] += wmap
                 done += 1
                 if progress:
                     progress(done, total, time.time() - t0)

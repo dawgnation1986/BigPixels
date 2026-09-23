@@ -565,7 +565,7 @@ function renderDenoise(c) {
     it => it.label, id => { S.sel.denoise = id; syncBarSummary(); });
 }
 
-/* 清晰度：收尾锐化的强弱。原样 = 完全不锐化，更锐 = 线条最硬（接近线上那种观感）。
+/* 清晰度：收尾细节补偿的强弱。原样 = 不做补偿；标准 / 更锐 = 零均值带通，增益 1x / 1.5x。
    注意 id 用 clarity 不是 clear —— #clear 已经是「移除」那个按钮了，撞了名字
    会把这个单选框整个渲染进源图卡片里。 */
 function renderClear(c) {
@@ -1211,7 +1211,11 @@ function renderLedger(j) {
         (j.preset_label || "—") +
         U(t("ui.ledger.denoise", {name: j.denoise ? dnLabel(j.denoise) : "—"}))) +
     row(t("ui.ledger.clear"), clearLabel(j.clear || "normal") +
-        U(j.sharp_amount ? t("ui.ledger.sharp", {r: j.sharp_radius, g: j.sharp_amount}) : ""),
+        U(j.sharp_amount
+          ? (j.finish_kind === "band"
+              ? t("ui.ledger.band", {r1: j.sharp_radius, r2: j.sharp_radius2, g: j.sharp_amount})
+              : t("ui.ledger.sharp", {r: j.sharp_radius, g: j.sharp_amount}))
+          : ""),
         j.sharp_amount ? t("ui.ledger.clear.note") : t("ui.ledger.clear.none")) +
     row(t("ui.ledger.bright"), brightLabel(j.bright || "off") +
         U(j.bright_factor && j.bright_factor !== 1

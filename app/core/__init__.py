@@ -12,10 +12,10 @@
     paths      项目里所有路径的唯一出处（ROOT / models / outputs / .cache / locales）
     settings   用户设置（保存模式、界面语言）—— outputs/settings.json 只由它读写
     i18n       界面语言与词条查找，词条在 app/locales/<lang>.json
-    presets    预设表、降噪档、清晰度档，以及"档位 → 权重和锐化参数"的换算
+    presets    预设表、降噪档、清晰度档，以及"档位 → 权重和收尾参数"的换算
     runner     单个 ONNX 模型的瓦片式推理器（尺寸自适配 / 羽化融合 / 后端数值自检）
-    pipeline   端到端：串联多次网络 + 收尾缩放 + 收尾锐化
-    imaging    读图 / 存图 / unsharp
+    pipeline   端到端：串联多次网络 + 收尾缩放 + 收尾细节补偿
+    imaging    读图 / 存图 / unsharp / detail_band（零均值带通）
     metrics    PSNR / SSIM —— 全项目只此一份，离线和网页端共用
 
 路径、设置、语言、预设是**立刻导入**的：它们只用标准库，而
@@ -36,7 +36,7 @@ from .paths import (                      # noqa: F401
 )
 from .presets import (                    # noqa: F401
     BRIGHT_LEVELS, CLEAR_LEVELS, DENOISE_LEVELS, PRESETS, label,
-    plan_passes, resolve_bright, resolve_model, resolve_sharpen,
+    plan_passes, plan_runs, resolve_bright, resolve_finish, resolve_model,
 )
 from . import i18n, settings              # noqa: F401
 
@@ -49,8 +49,8 @@ def _lazy(mod: str, *names: str) -> None:
         _LAZY[n] = mod
 
 
-_lazy("imaging", "_gauss_blur", "_gauss_kernel", "brighten", "declip", "load_image",
-      "save_image", "unsharp")
+_lazy("imaging", "_gauss_blur", "_gauss_kernel", "brighten", "declip", "detail_band",
+      "load_image", "save_image", "unsharp")
 _lazy("pipeline", "build_runner", "upscale", "upscale_alpha")
 _lazy("runner", "MIN_TILE", "TILE_MULT", "SRRunner", "_is_nhwc", "ort")
 
@@ -73,7 +73,8 @@ __all__ = [
     "LOCALE_DIR", "SETTINGS_PATH",
     "LANGS", "LANG_NAMES", "DEFAULT_LANG", "lang_of", "t", "web_table", "i18n", "settings",
     "PRESETS", "DENOISE_LEVELS", "CLEAR_LEVELS", "BRIGHT_LEVELS", "label",
-    "resolve_model", "plan_passes", "resolve_sharpen", "resolve_bright",
-    "load_image", "save_image", "unsharp", "brighten", "declip", "SRRunner", "ort",
+    "resolve_model", "plan_passes", "plan_runs", "resolve_finish", "resolve_bright",
+    "load_image", "save_image", "unsharp", "detail_band", "brighten", "declip",
+    "SRRunner", "ort",
     "build_runner", "upscale", "upscale_alpha",
 ]
